@@ -131,14 +131,23 @@ export class TradingViewComponent implements OnInit, OnDestroy {
   }
 
   async loadCandles(): Promise<void> {
-    try {
-      const data = await firstValueFrom(
-        this.http.get<Candle[]>(`/api/market/klines?symbol=${this.config.pair()}&interval=${this.config.timeframe()}&limit=200`)
-      );
-      this.candles.set(data);
-    } catch (err) {
-      console.error('Failed to load candles:', err);
+    // Call Binance REST directly from browser — public endpoint, CORS allowed
+    const hosts = ['https://api.binance.com', 'https://api1.binance.com', 'https://api2.binance.com'];
+    for (const host of hosts) {
+      try {
+        const url = `${host}/api/v3/klines?symbol=${this.config.pair()}&interval=${this.config.timeframe()}&limit=200`;
+        const raw = await firstValueFrom(this.http.get<any[][]>(url));
+        const candles: Candle[] = raw.map(k => ({
+          time: Math.floor(Number(k[0]) / 1000),
+          open: parseFloat(k[1]), high: parseFloat(k[2]),
+          low: parseFloat(k[3]),  close: parseFloat(k[4]),
+          volume: parseFloat(k[5]),
+        }));
+        this.candles.set(candles);
+        return;
+      } catch { continue; }
     }
+    console.error('Failed to load candles from all Binance hosts');
   }
 
   async changeTimeframe(tf: string): Promise<void> {
