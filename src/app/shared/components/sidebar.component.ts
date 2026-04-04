@@ -153,8 +153,9 @@ interface NavItem { path: string; label: string; icon: string; }
 })
 export class SidebarComponent {
   navItems: NavItem[] = [
-    { path: '/dashboard', label: 'Dashboard',     icon: '▦' },
+    { path: '/dashboard', label: 'Dashboard',     icon: '▦'  },
     { path: '/chart',     label: 'Live Chart',    icon: '📈' },
+    { path: '/market',    label: 'Gainers/Losers',icon: '🏆' },
     { path: '/bot',       label: 'Bot Config',    icon: '⚡' },
     { path: '/trades',    label: 'Trade History', icon: '📋' },
     { path: '/guide',     label: 'How It Works',  icon: '📖' },
