@@ -22,13 +22,10 @@ const BASE = TESTNET
   ? 'https://testnet.binance.vision/api'
   : 'https://api.binance.com/api';
 
-const PUBLIC_HOSTS = [
-  'https://api.binance.com',
-  'https://api1.binance.com',
-  'https://api2.binance.com',
-  'https://api3.binance.com',
-  'https://testnet.binance.vision',
-];
+// Testnet first when TESTNET=true, otherwise try all public hosts
+const PUBLIC_HOSTS = TESTNET
+  ? ['https://testnet.binance.vision', 'https://api.binance.com', 'https://api1.binance.com']
+  : ['https://api.binance.com', 'https://api1.binance.com', 'https://api2.binance.com', 'https://api3.binance.com'];
 
 // ── Binance helpers ──────────────────────────────────────────────────────────
 function sign(qs: string): string {
@@ -177,7 +174,18 @@ function compositeSignal(closes: number[]): { action: 'BUY'|'SELL'|'HOLD', score
 const WALLET_FILE = path.join(process.cwd(), 'wallet.json');
 
 async function saveWallet(): Promise<void> {
-  if (!API_KEY) return; // skip if no API key configured
+  // Paper/testnet mode: write a simulated $10,000 USDT paper balance
+  if (PAPER || !API_KEY) {
+    const paperBalance = [{ asset: 'USDT', free: 10000, locked: 0, total: 10000 }];
+    fs.writeFileSync(WALLET_FILE, JSON.stringify({
+      balances: paperBalance,
+      isPaper: true,
+      updatedAt: Date.now(),
+    }, null, 2));
+    console.log('Paper wallet saved: $10,000 USDT (simulated)');
+    return;
+  }
+  // Live mode: fetch real balances from Binance
   try {
     const acc = await binanceRequest('GET', '/v3/account', {}, true);
     const balances = (acc.balances ?? [])
@@ -189,8 +197,8 @@ async function saveWallet(): Promise<void> {
         total: parseFloat(b.free) + parseFloat(b.locked),
       }))
       .sort((a: any, b: any) => b.total - a.total);
-    fs.writeFileSync(WALLET_FILE, JSON.stringify({ balances, updatedAt: Date.now() }, null, 2));
-    console.log(`Wallet saved: ${balances.length} asset(s)`);
+    fs.writeFileSync(WALLET_FILE, JSON.stringify({ balances, isPaper: false, updatedAt: Date.now() }, null, 2));
+    console.log(`Wallet saved: ${balances.length} real asset(s)`);
   } catch (e: any) {
     console.warn('Could not fetch wallet:', e.message);
   }

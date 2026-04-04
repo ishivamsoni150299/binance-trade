@@ -16,6 +16,12 @@ interface WalletBalance {
   total: number;
 }
 
+interface WalletData {
+  balances: WalletBalance[];
+  isPaper: boolean;
+  updatedAt: number;
+}
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
@@ -82,7 +88,7 @@ interface WalletBalance {
       <!-- Wallet Balances -->
       <div class="section">
         <div class="section-header">
-          <h2>Wallet Balances</h2>
+          <h2>Wallet Balances @if (walletIsPaper()) { <span class="paper-badge">PAPER</span> }</h2>
           <div class="wallet-meta">
             @if (walletUpdatedAt() > 0) {
               <span class="wallet-updated">Updated {{ walletUpdatedAt() | date:'HH:mm' }}</span>
@@ -201,6 +207,7 @@ interface WalletBalance {
     .section { margin-bottom: 24px; }
     .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
     .section h2, .section-header h2 { font-size: 16px; font-weight: 600; margin: 0; }
+    .paper-badge { font-size: 10px; background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); padding: 2px 6px; border-radius: 4px; font-weight: 600; vertical-align: middle; margin-left: 6px; }
     .wallet-meta { display: flex; align-items: center; gap: 10px; }
     .wallet-updated { font-size: 11px; color: var(--text-muted); }
     .refresh-btn {
@@ -269,6 +276,7 @@ export class DashboardComponent implements OnInit {
   walletLoading = signal(false);
   walletError = signal<string | null>(null);
   walletUpdatedAt = signal<number>(0);
+  walletIsPaper = signal(false);
 
   constructor(
     readonly ws: BinanceWsService,
@@ -290,14 +298,13 @@ export class DashboardComponent implements OnInit {
     try {
       // wallet.json is committed by GitHub Actions every 5 min — no Vercel/Binance CORS issue
       const url = 'https://raw.githubusercontent.com/ishivamsoni150299/binance-trade/main/wallet.json';
-      const data = await firstValueFrom(
-        this.http.get<{ balances: WalletBalance[]; updatedAt: number }>(url)
-      );
+      const data = await firstValueFrom(this.http.get<WalletData>(url));
       if (!data.balances?.length) {
         this.walletError.set('No assets yet — GitHub Actions will populate this within 5 minutes after the bot runs.');
       } else {
         this.walletBalances.set(data.balances);
         this.walletUpdatedAt.set(data.updatedAt);
+        this.walletIsPaper.set(data.isPaper ?? false);
       }
     } catch (e: any) {
       this.walletError.set('Could not load wallet snapshot. The bot will update it on next run.');
