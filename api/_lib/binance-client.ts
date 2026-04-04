@@ -1,4 +1,4 @@
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 
 const BASE_URL = process.env['BINANCE_TESTNET'] === 'true'
   ? 'https://testnet.binance.vision/api'
@@ -12,7 +12,9 @@ function sign(queryString: string): string {
 }
 
 async function request(method: string, path: string, params: Record<string, any> = {}, signed = false): Promise<any> {
-  let qs = new URLSearchParams(params).toString();
+  let qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)]))
+  ).toString();
 
   if (signed) {
     const timestamp = Date.now();
@@ -26,8 +28,10 @@ async function request(method: string, path: string, params: Record<string, any>
     headers: {
       'X-MBX-APIKEY': API_KEY,
       'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'Mozilla/5.0 (compatible; BTrader/1.0)',
     },
     body: method === 'POST' ? qs : undefined,
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!res.ok) {
@@ -38,8 +42,36 @@ async function request(method: string, path: string, params: Record<string, any>
   return res.json();
 }
 
+// Public klines don't need API key — try all Binance hosts for reliability
+const PUBLIC_HOSTS = [
+  'https://api.binance.com',
+  'https://api1.binance.com',
+  'https://api2.binance.com',
+  'https://api3.binance.com',
+];
+
 export async function getKlines(symbol: string, interval: string, limit = 200): Promise<number[][]> {
-  return request('GET', '/v3/klines', { symbol, interval, limit });
+  // Use testnet if configured
+  if (process.env['BINANCE_TESTNET'] === 'true') {
+    return request('GET', '/v3/klines', { symbol, interval, limit });
+  }
+
+  let lastError: Error | null = null;
+  for (const host of PUBLIC_HOSTS) {
+    try {
+      const url = `${host}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BTrader/1.0)' },
+        signal: AbortSignal.timeout(8000),
+      });
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error(data?.msg ?? 'Non-array response');
+      return data;
+    } catch (err: any) {
+      lastError = err;
+    }
+  }
+  throw lastError ?? new Error('All Binance hosts failed for klines');
 }
 
 export async function getAccountInfo(): Promise<any> {
