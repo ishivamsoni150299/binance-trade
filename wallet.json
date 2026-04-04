@@ -1,1 +1,12 @@
-{"balances":[],"updatedAt":0}
+{
+  "balances": [
+    {
+      "asset": "USDT",
+      "free": 10000,
+      "locked": 0,
+      "total": 10000
+    }
+  ],
+  "isPaper": true,
+  "updatedAt": 1775297011231
+}
