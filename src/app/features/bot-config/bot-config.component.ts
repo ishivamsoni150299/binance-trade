@@ -1,5 +1,6 @@
 import { Component, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { TitleCasePipe } from '@angular/common';
 import { ConfigService } from '../../core/services/config.service';
 import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
 import { StrategyType, Timeframe } from '../../core/models/types';
@@ -7,7 +8,7 @@ import { StrategyType, Timeframe } from '../../core/models/types';
 @Component({
   selector: 'app-bot-config',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, TitleCasePipe],
   template: `
     <div class="page">
       <div class="page-header">
