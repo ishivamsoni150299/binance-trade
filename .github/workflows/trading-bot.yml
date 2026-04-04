@@ -57,10 +57,10 @@ jobs:
           echo "Pair: $BOT_PAIR | Timeframe: $BOT_TIMEFRAME | Paper: $BOT_PAPER_TRADING | Testnet: $BINANCE_TESTNET"
           npx --yes tsx scripts/bot-runner.ts
 
-      - name: Commit trades log
+      - name: Commit bot data
         run: |
           git config user.name "BTrader Bot"
           git config user.email "bot@btrade.local"
-          git add trades.json 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "bot: update trades.json [skip ci]"
+          git add trades.json wallet.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "bot: update trades + wallet [skip ci]"
           git push 2>/dev/null || true

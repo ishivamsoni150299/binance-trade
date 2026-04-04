@@ -173,6 +173,29 @@ function compositeSignal(closes: number[]): { action: 'BUY'|'SELL'|'HOLD', score
   return { action, score, rsi, macd, bb, ema };
 }
 
+// ── Wallet snapshot (saved to wallet.json in repo) ───────────────────────────
+const WALLET_FILE = path.join(process.cwd(), 'wallet.json');
+
+async function saveWallet(): Promise<void> {
+  if (!API_KEY) return; // skip if no API key configured
+  try {
+    const acc = await binanceRequest('GET', '/v3/account', {}, true);
+    const balances = (acc.balances ?? [])
+      .filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
+      .map((b: any) => ({
+        asset: b.asset,
+        free: parseFloat(b.free),
+        locked: parseFloat(b.locked),
+        total: parseFloat(b.free) + parseFloat(b.locked),
+      }))
+      .sort((a: any, b: any) => b.total - a.total);
+    fs.writeFileSync(WALLET_FILE, JSON.stringify({ balances, updatedAt: Date.now() }, null, 2));
+    console.log(`Wallet saved: ${balances.length} asset(s)`);
+  } catch (e: any) {
+    console.warn('Could not fetch wallet:', e.message);
+  }
+}
+
 // ── Trade log (appended to trades.json in repo) ──────────────────────────────
 const TRADES_FILE = path.join(process.cwd(), 'trades.json');
 
@@ -199,7 +222,10 @@ async function main() {
     process.exit(1);
   }
 
-  // 1. Fetch candles
+  // 1. Save wallet snapshot (runs every cycle so balance stays fresh)
+  await saveWallet();
+
+  // 2. Fetch candles
   const raw = await getKlines(PAIR, TIMEFRAME, 200);
   const closes = raw.map(k => parseFloat(String(k[4])));
   const currentPrice = closes[closes.length - 1];
