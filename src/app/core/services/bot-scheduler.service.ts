@@ -1,0 +1,86 @@
+import { Injectable, signal, OnDestroy, effect } from '@angular/core';
+import { ConfigService } from './config.service';
+import { TradeStoreService } from './trade-store.service';
+import { Trade } from '../models/types';
+
+export interface CycleResult {
+  action: string;
+  score: number;
+  price: number;
+  indicators: Record<string, number>;
+  trade?: Trade;
+  reason?: string;
+  timestamp: number;
+}
+
+@Injectable({ providedIn: 'root' })
+export class BotSchedulerService implements OnDestroy {
+  private worker: Worker | null = null;
+
+  readonly status = signal<'stopped' | 'running' | 'error'>('stopped');
+  readonly lastResult = signal<CycleResult | null>(null);
+  readonly lastError = signal<string | null>(null);
+  readonly cycleCount = signal<number>(0);
+
+  constructor(
+    private config: ConfigService,
+    private tradeStore: TradeStoreService,
+  ) {}
+
+  start(): void {
+    if (this.status() === 'running') return;
+    if (typeof Worker === 'undefined') {
+      this.status.set('error');
+      this.lastError.set('Web Workers not supported in this browser');
+      return;
+    }
+
+    this.worker = new Worker(new URL('../workers/bot.worker.ts', import.meta.url), { type: 'module' });
+
+    this.worker.onmessage = (evt) => this.handleWorkerMessage(evt.data);
+    this.worker.onerror = (err) => {
+      this.lastError.set(err.message);
+      this.status.set('error');
+    };
+
+    const cfg = this.config.config();
+    this.worker.postMessage({
+      type: 'START',
+      payload: {
+        config: {
+          ...cfg,
+          openPositions: this.tradeStore.openTrades().length,
+          dailyPnlPct: 0, // TODO: compute from store
+        },
+        intervalMs: 30000, // Every 30 seconds
+      },
+    });
+
+    this.status.set('running');
+    this.lastError.set(null);
+  }
+
+  stop(): void {
+    this.worker?.postMessage({ type: 'STOP' });
+    this.worker?.terminate();
+    this.worker = null;
+    this.status.set('stopped');
+  }
+
+  private async handleWorkerMessage(msg: { type: string; result?: CycleResult; error?: string }): Promise<void> {
+    if (msg.type === 'CYCLE_RESULT' && msg.result) {
+      this.lastResult.set(msg.result);
+      this.cycleCount.update(n => n + 1);
+
+      if (msg.result.trade) {
+        await this.tradeStore.addTrade(msg.result.trade as Trade);
+      }
+    } else if (msg.type === 'CYCLE_ERROR') {
+      this.lastError.set(msg.error ?? 'Unknown error');
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.stop();
+  }
+}

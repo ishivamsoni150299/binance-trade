@@ -1,0 +1,57 @@
+name: Trading Bot (Always-On)
+
+on:
+  schedule:
+    # Every 5 minutes — free on GitHub Actions
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      pair:
+        description: 'Trading pair (e.g. BTCUSDT)'
+        required: false
+        default: 'BTCUSDT'
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Execute bot cycle
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          BOT_SECRET: ${{ secrets.BOT_SECRET }}
+        run: |
+          PAIR="${{ github.event.inputs.pair || 'BTCUSDT' }}"
+
+          echo "Running bot cycle for $PAIR at $(date -u)"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "$APP_URL/api/bot/run" \
+            -H "Content-Type: application/json" \
+            -H "X-Bot-Secret: $BOT_SECRET" \
+            -d "{
+              \"pair\": \"$PAIR\",
+              \"timeframe\": \"1h\",
+              \"paperTrading\": true
+            }" \
+            --max-time 25 \
+            --retry 2 \
+            --retry-delay 3)
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          ACTION=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('action','?'))" 2>/dev/null || echo "?")
+          SCORE=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(round(d.get('score',0)*100))" 2>/dev/null || echo "?")
+          PRICE=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('price',0))" 2>/dev/null || echo "?")
+
+          echo "=== Signal: $ACTION | Score: $SCORE | Price: \$$PRICE ==="
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Bot API returned HTTP $HTTP_CODE"
+            exit 1
+          fi

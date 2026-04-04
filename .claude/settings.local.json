@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npx @angular/cli@latest version)",
+      "Bash(npx @angular/cli@19 new binancetradesaas --directory=. --routing=true --style=scss --standalone=true --skip-git=true --package-manager=npm --no-interactive)",
+      "Bash(npm install:*)",
+      "Bash(node -e \"const p=require\\(''./package.json''\\); console.log\\(p.dependencies[''@angular/core'']\\)\")",
+      "Bash(npx tailwindcss:*)",
+      "Bash(./node_modules/.bin/tailwindcss init:*)",
+      "Bash(ls node_modules/.bin/tailwind*)"
+    ]
+  }
+}
