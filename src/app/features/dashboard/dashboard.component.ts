@@ -1,11 +1,20 @@
-import { Component, OnInit, computed } from '@angular/core';
+import { Component, OnInit, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { BinanceWsService } from '../../core/services/binance-ws.service';
 import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
 import { TradeStoreService } from '../../core/services/trade-store.service';
 import { ConfigService } from '../../core/services/config.service';
 import { StatCardComponent } from '../../shared/components/stat-card.component';
 import { RouterLink } from '@angular/router';
+
+interface WalletBalance {
+  asset: string;
+  free: number;
+  locked: number;
+  total: number;
+}
 
 @Component({
   selector: 'app-dashboard',
@@ -68,6 +77,41 @@ import { RouterLink } from '@angular/router';
           [value]="tradeStore.openTrades().length.toString()"
           [sub]="'Bot: ' + bot.status()"
         />
+      </div>
+
+      <!-- Wallet Balances -->
+      <div class="section">
+        <div class="section-header">
+          <h2>Wallet Balances</h2>
+          <button class="refresh-btn" (click)="loadWallet()" [disabled]="walletLoading()">
+            {{ walletLoading() ? 'Loading...' : '↻ Refresh' }}
+          </button>
+        </div>
+
+        @if (walletError()) {
+          <div class="wallet-error">
+            ⚠ {{ walletError() }}
+            @if (walletError()?.includes('not set')) {
+              <span class="wallet-hint"> — Add BINANCE_API_KEY to Vercel environment variables.</span>
+            }
+          </div>
+        }
+
+        @if (walletBalances().length > 0) {
+          <div class="wallet-grid">
+            @for (b of walletBalances(); track b.asset) {
+              <div class="wallet-card">
+                <div class="wallet-asset">{{ b.asset }}</div>
+                <div class="wallet-total">{{ b.total.toFixed(b.asset === 'USDT' || b.asset === 'BUSD' ? 2 : 6) }}</div>
+                @if (b.locked > 0) {
+                  <div class="wallet-locked">{{ b.locked.toFixed(6) }} locked</div>
+                }
+              </div>
+            }
+          </div>
+        } @else if (!walletLoading() && !walletError()) {
+          <div class="wallet-empty">No assets found in your Binance account.</div>
+        }
       </div>
 
       <!-- Bot last signal -->
@@ -149,6 +193,26 @@ import { RouterLink } from '@angular/router';
     .positive { color: var(--green); }
     .negative { color: var(--red); }
     .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+    .section { margin-bottom: 24px; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .section h2, .section-header h2 { font-size: 16px; font-weight: 600; margin: 0; }
+    .refresh-btn {
+      background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary);
+      padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+    }
+    .refresh-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .wallet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+    .wallet-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 14px 16px;
+    }
+    .wallet-asset { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; font-weight: 600; letter-spacing: 0.5px; }
+    .wallet-total { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+    .wallet-locked { font-size: 11px; color: var(--yellow); margin-top: 4px; }
+    .wallet-error { background: rgba(239,83,80,0.1); border: 1px solid rgba(239,83,80,0.3); color: var(--red); border-radius: 8px; padding: 12px 16px; font-size: 13px; }
+    .wallet-hint { color: var(--text-secondary); }
+    .wallet-empty { color: var(--text-muted); font-size: 13px; padding: 16px 0; }
     .signal-card {
       background: var(--bg-card); border: 1px solid var(--border);
       border-radius: 10px; padding: 16px; margin-bottom: 20px;
@@ -178,7 +242,6 @@ import { RouterLink } from '@angular/router';
     .btn-primary:hover { background: #2563eb; }
     .btn-secondary { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
     .btn-secondary:hover { background: var(--bg-hover); }
-    .section h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
     .trades-list { display: flex; flex-direction: column; gap: 8px; }
     .trade-row {
       display: flex; align-items: center; gap: 16px;
@@ -195,16 +258,41 @@ import { RouterLink } from '@angular/router';
   `]
 })
 export class DashboardComponent implements OnInit {
+  walletBalances = signal<WalletBalance[]>([]);
+  walletLoading = signal(false);
+  walletError = signal<string | null>(null);
+
   constructor(
     readonly ws: BinanceWsService,
     readonly bot: BotSchedulerService,
     readonly tradeStore: TradeStoreService,
     readonly config: ConfigService,
+    private http: HttpClient,
   ) {}
 
   async ngOnInit(): Promise<void> {
     await this.tradeStore.init();
     this.ws.connect(this.config.pair(), this.config.timeframe());
+    await this.loadWallet();
+  }
+
+  async loadWallet(): Promise<void> {
+    this.walletLoading.set(true);
+    this.walletError.set(null);
+    try {
+      const data = await firstValueFrom(
+        this.http.get<{ balances: WalletBalance[]; error?: string }>('/api/wallet/balances')
+      );
+      if (data.error) {
+        this.walletError.set(data.error);
+      } else {
+        this.walletBalances.set(data.balances ?? []);
+      }
+    } catch (e: any) {
+      this.walletError.set(e?.error?.error ?? e?.message ?? 'Failed to load wallet');
+    } finally {
+      this.walletLoading.set(false);
+    }
   }
 
   toggleBot(): void {

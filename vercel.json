@@ -5,6 +5,7 @@
   "rewrites": [
     { "source": "/api/bot/run", "destination": "/api/bot/run" },
     { "source": "/api/market/klines", "destination": "/api/market/klines" },
+    { "source": "/api/wallet/balances", "destination": "/api/wallet/balances" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
