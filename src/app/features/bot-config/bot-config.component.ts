@@ -1,4 +1,4 @@
-import { Component, computed } from '@angular/core';
+﻿import { Component, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TitleCasePipe } from '@angular/common';
 import { ConfigService } from '../../core/services/config.service';
@@ -20,16 +20,16 @@ import { StrategyType, Timeframe } from '../../core/models/types';
           <div class="bot-status-chip" [class]="'chip-' + bot.status()">
             <span class="chip-dot"></span>
             {{ bot.status() | titlecase }}
-            @if (bot.cycleCount() > 0) { · {{ bot.cycleCount() }} cycles }
+            @if (bot.cycleCount() > 0) { - {{ bot.cycleCount() }} cycles }
           </div>
           <button class="toggle-btn" [class.btn-stop]="bot.status() === 'running'" (click)="toggleBot()">
-            {{ bot.status() === 'running' ? '⏹ Stop Bot' : '▶ Start Bot' }}
+            {{ bot.status() === 'running' ? 'Stop Bot' : 'Start Bot' }}
           </button>
         </div>
       </div>
 
       @if (bot.lastError()) {
-        <div class="error-banner">⚠ {{ bot.lastError() }}</div>
+        <div class="error-banner">{{ bot.lastError() }}</div>
       }
 
       <div class="config-layout">
@@ -68,7 +68,7 @@ import { StrategyType, Timeframe } from '../../core/models/types';
                   <div class="sc-name">{{ s }}</div>
                   <div class="sc-desc">{{ strategyDesc[s] }}</div>
                   @if (cfg().strategy === s) {
-                    <div class="sc-check">✓</div>
+                    <div class="sc-check">OK</div>
                   }
                 </div>
               }
@@ -80,14 +80,12 @@ import { StrategyType, Timeframe } from '../../core/models/types';
             <div class="card-title">Trading Mode</div>
             <div class="mode-toggle">
               <button [class.active]="cfg().riskParams.paperTrading" (click)="config.updateRisk({paperTrading: true})">
-                <span class="mode-icon">📝</span>
                 <div>
                   <div class="mode-name">Paper</div>
                   <div class="mode-sub">Simulated trades</div>
                 </div>
               </button>
               <button [class.active]="!cfg().riskParams.paperTrading" [class.live-active]="!cfg().riskParams.paperTrading" (click)="setLive()">
-                <span class="mode-icon">⚡</span>
                 <div>
                   <div class="mode-name">Live</div>
                   <div class="mode-sub">Real orders</div>
@@ -95,7 +93,7 @@ import { StrategyType, Timeframe } from '../../core/models/types';
               </button>
             </div>
             @if (!cfg().riskParams.paperTrading) {
-              <div class="live-warning">⚠ Live mode: real money at risk. Ensure API keys are set in Vercel.</div>
+              <div class="live-warning">Live mode: real money at risk. Ensure API keys are set in Vercel.</div>
             }
           </div>
 
@@ -233,8 +231,8 @@ import { StrategyType, Timeframe } from '../../core/models/types';
       </div>
 
       <div class="config-footer">
-        <button class="btn-reset" (click)="resetConfig()">↺ Reset to Defaults</button>
-        <span class="save-hint">✓ All settings saved automatically to localStorage</span>
+        <button class="btn-reset" (click)="resetConfig()">Reset to Defaults</button>
+        <span class="save-hint">All settings saved automatically to localStorage</span>
       </div>
     </div>
   `,
@@ -301,10 +299,10 @@ import { StrategyType, Timeframe } from '../../core/models/types';
     }
     .strategy-card:hover { border-color: var(--border-light); background: var(--bg-primary); }
     .strategy-card.selected { border-color: var(--blue); background: rgba(59,130,246,0.08); }
-    .sc-icon { font-size: 18px; width: 24px; text-align: center; }
+    .sc-icon { font-size: 11px; width: 48px; text-align: center; color: var(--text-muted); font-weight: 700; }
     .sc-name { font-size: 12px; font-weight: 700; color: var(--text-primary); width: 80px; }
     .sc-desc { font-size: 11px; color: var(--text-muted); flex: 1; }
-    .sc-check { font-size: 12px; color: var(--blue); font-weight: 700; }
+    .sc-check { font-size: 11px; color: var(--blue); font-weight: 700; }
 
     /* Mode toggle */
     .mode-toggle { display: flex; gap: 10px; margin-bottom: 10px; }
@@ -316,7 +314,6 @@ import { StrategyType, Timeframe } from '../../core/models/types';
     .mode-toggle button:hover { border-color: var(--border-light); background: var(--bg-primary); }
     .mode-toggle button.active { border-color: var(--blue); background: rgba(59,130,246,0.08); color: var(--blue); }
     .mode-toggle button.live-active { border-color: var(--red); background: rgba(239,83,80,0.08); color: var(--red); }
-    .mode-icon { font-size: 20px; }
     .mode-name { font-size: 13px; font-weight: 700; line-height: 1.2; text-align: left; }
     .mode-sub { font-size: 10px; color: inherit; opacity: 0.7; }
     .live-warning { font-size: 12px; color: var(--red); background: rgba(239,83,80,0.08); border-radius: 6px; padding: 8px 10px; }
@@ -365,7 +362,7 @@ export class BotConfigComponent {
   strategies: StrategyType[] = ['RSI', 'MACD', 'BOLLINGER', 'EMA', 'COMPOSITE'];
 
   strategyIcon: Record<StrategyType, string> = {
-    RSI: '📊', MACD: '📉', BOLLINGER: '🎯', EMA: '📈', COMPOSITE: '⚡',
+    RSI: 'RSI', MACD: 'MACD', BOLLINGER: 'BOLL', EMA: 'EMA', COMPOSITE: 'COMP',
   };
   strategyDesc: Record<StrategyType, string> = {
     RSI: 'Buy oversold / sell overbought zones',

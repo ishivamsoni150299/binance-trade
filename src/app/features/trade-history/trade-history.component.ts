@@ -1,7 +1,6 @@
-import { Component, OnInit, computed, signal } from '@angular/core';
+﻿import { Component, OnInit, computed, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { TradeStoreService } from '../../core/services/trade-store.service';
-import { Trade } from '../../core/models/types';
 
 @Component({
   selector: 'app-trade-history',
@@ -14,7 +13,7 @@ import { Trade } from '../../core/models/types';
           <h1>Trade History</h1>
           <div class="subtitle">{{ tradeStore.stats().totalTrades }} total trades</div>
         </div>
-        <button class="btn btn-outline" (click)="tradeStore.exportCsv()">⬇ Export CSV</button>
+        <button class="btn btn-outline" (click)="tradeStore.exportCsv()">Export CSV</button>
       </div>
 
       <!-- Stats row -->
@@ -48,7 +47,7 @@ import { Trade } from '../../core/models/types';
         <div class="stat-item">
           <span class="stat-label">Profit Factor</span>
           <span class="stat-val" [class.positive]="profitFactor() >= 1.5" [class.negative]="profitFactor() < 1">
-            {{ profitFactor() === Infinity ? '∞' : profitFactor().toFixed(2) }}
+            {{ profitFactor() === Infinity ? 'Inf' : profitFactor().toFixed(2) }}
           </span>
         </div>
         <div class="stat-divider"></div>
@@ -113,7 +112,7 @@ import { Trade } from '../../core/models/types';
           </div>
         } @else if (filteredTrades().length === 0) {
           <div class="empty-state">
-            <div class="empty-icon">📊</div>
+            <div class="empty-icon">No data</div>
             <p>No trades yet.</p>
             <span>Start the bot in paper mode to begin trading.</span>
           </div>
@@ -140,13 +139,13 @@ import { Trade } from '../../core/models/types';
                     <td class="td-pair">{{ t.pair }}</td>
                     <td><span class="badge" [class]="'side-' + t.side.toLowerCase()">{{ t.side }}</span></td>
                     <td class="td-num">\${{ t.entryPrice.toLocaleString('en-US',{minimumFractionDigits:2}) }}</td>
-                    <td class="td-num">{{ t.exitPrice ? '$' + t.exitPrice.toLocaleString('en-US',{minimumFractionDigits:2}) : '—' }}</td>
+                    <td class="td-num">{{ t.exitPrice ? '$' + t.exitPrice.toLocaleString('en-US',{minimumFractionDigits:2}) : '-' }}</td>
                     <td class="td-muted">{{ t.quantity.toFixed(5) }}</td>
                     <td class="td-num" [class.positive]="(t.pnl ?? 0) > 0" [class.negative]="(t.pnl ?? 0) < 0">
-                      {{ t.pnl != null ? (t.pnl >= 0 ? '+$' : '-$') + Math.abs(t.pnl).toFixed(2) : '—' }}
+                      {{ t.pnl != null ? (t.pnl >= 0 ? '+$' : '-$') + Math.abs(t.pnl).toFixed(2) : '-' }}
                     </td>
                     <td class="td-num" [class.positive]="(t.pnlPct ?? 0) > 0" [class.negative]="(t.pnlPct ?? 0) < 0">
-                      {{ t.pnlPct != null ? (t.pnlPct >= 0 ? '+' : '') + t.pnlPct.toFixed(2) + '%' : '—' }}
+                      {{ t.pnlPct != null ? (t.pnlPct >= 0 ? '+' : '') + t.pnlPct.toFixed(2) + '%' : '-' }}
                     </td>
                     <td><span class="badge" [class]="'status-' + t.status">{{ t.status }}</span></td>
                     <td><span class="badge" [class]="t.isPaper ? 'mode-paper' : 'mode-live'">{{ t.isPaper ? 'PAPER' : 'LIVE' }}</span></td>
@@ -205,7 +204,7 @@ import { Trade } from '../../core/models/types';
     }
     .loading-state { padding: 8px 0; }
     .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
-    .empty-icon { font-size: 48px; display: block; margin-bottom: 12px; }
+    .empty-icon { font-size: 14px; font-weight: 700; display: block; margin-bottom: 12px; }
     .empty-state p { font-size: 15px; font-weight: 600; margin: 0 0 4px; color: var(--text-secondary); }
     .empty-state span { font-size: 13px; }
     .table-wrapper { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }

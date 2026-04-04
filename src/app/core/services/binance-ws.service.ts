@@ -1,4 +1,4 @@
-import { Injectable, signal, OnDestroy } from '@angular/core';
+﻿import { Injectable, signal, OnDestroy } from '@angular/core';
 import { Candle, Timeframe } from '../models/types';
 
 export interface Ticker {
@@ -109,7 +109,7 @@ export class BinanceWsService implements OnDestroy {
       };
       this.latestCandle.set(candle);
       if (k.x) {
-        // Candle closed — add to history
+        // Candle closed - add to history
         this.candles.update(prev => {
           const updated = [...prev];
           const last = updated[updated.length - 1];

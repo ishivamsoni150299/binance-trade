@@ -1,10 +1,9 @@
-import { Component, OnInit, OnDestroy, computed, effect, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+﻿import { Component, OnInit, OnDestroy, effect, signal, EffectRef } from '@angular/core';
 import { BinanceWsService } from '../../core/services/binance-ws.service';
 import { ConfigService } from '../../core/services/config.service';
 import { ChartComponent } from './chart.component';
 import { Candle } from '../../core/models/types';
+import { ApiService } from '../../core/services/api.service';
 
 @Component({
   selector: 'app-trading-view',
@@ -70,7 +69,7 @@ import { Candle } from '../../core/models/types';
       <!-- Connection status -->
       <div class="status-bar">
         <span [class]="ws.connected() ? 'conn-ok' : 'conn-err'">
-          {{ ws.connected() ? '● Live' : '○ Reconnecting...' }}
+          {{ ws.connected() ? 'Live' : 'Reconnecting...' }}
         </span>
       </div>
     </div>
@@ -118,43 +117,37 @@ import { Candle } from '../../core/models/types';
 export class TradingViewComponent implements OnInit, OnDestroy {
   timeframes = ['1m', '5m', '15m', '1h', '4h', '1d'];
   readonly candles = signal<Candle[]>([]);
+  private effectRef?: EffectRef;
 
   constructor(
     readonly ws: BinanceWsService,
     readonly config: ConfigService,
-    private http: HttpClient,
+    private api: ApiService,
   ) {}
 
   async ngOnInit(): Promise<void> {
-    this.ws.connect(this.config.pair(), this.config.timeframe());
-    await this.loadCandles();
+    this.effectRef = effect(() => {
+      const pair = this.config.pair();
+      const tf = this.config.timeframe();
+      this.ws.connect(pair, tf);
+      void this.loadCandles(pair, tf);
+    });
   }
 
-  async loadCandles(): Promise<void> {
-    // Call Binance REST directly from browser — public endpoint, CORS allowed
-    const hosts = ['https://api.binance.com', 'https://api1.binance.com', 'https://api2.binance.com'];
-    for (const host of hosts) {
-      try {
-        const url = `${host}/api/v3/klines?symbol=${this.config.pair()}&interval=${this.config.timeframe()}&limit=200`;
-        const raw = await firstValueFrom(this.http.get<any[][]>(url));
-        const candles: Candle[] = raw.map(k => ({
-          time: Math.floor(Number(k[0]) / 1000),
-          open: parseFloat(k[1]), high: parseFloat(k[2]),
-          low: parseFloat(k[3]),  close: parseFloat(k[4]),
-          volume: parseFloat(k[5]),
-        }));
-        this.candles.set(candles);
-        return;
-      } catch { continue; }
+  async loadCandles(pair: string, timeframe: string): Promise<void> {
+    try {
+      const candles = await this.api.getKlines(pair, timeframe, 200);
+      this.candles.set(candles);
+    } catch {
+      console.error('Failed to load candles');
     }
-    console.error('Failed to load candles from all Binance hosts');
   }
 
-  async changeTimeframe(tf: string): Promise<void> {
+  changeTimeframe(tf: string): void {
     this.config.update({ timeframe: tf as any });
-    this.ws.connect(this.config.pair(), this.config.timeframe());
-    await this.loadCandles();
   }
 
-  ngOnDestroy(): void {}
+  ngOnDestroy(): void {
+    this.effectRef?.destroy();
+  }
 }

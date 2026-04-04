@@ -1,4 +1,4 @@
-export interface BollingerResult {
+﻿export interface BollingerResult {
   upper: number;
   middle: number;
   lower: number;
@@ -26,10 +26,10 @@ export function bollingerScore(closes: number[], period = 20, multiplier = 2): n
   if (!result) return 0;
 
   const b = result.percentB;
-  if (b <= 0) return 1;     // Below lower band — strong buy
-  if (b >= 1) return -1;    // Above upper band — strong sell
+  if (b <= 0) return 1;     // Below lower band - strong buy
+  if (b >= 1) return -1;    // Above upper band - strong sell
   if (b < 0.2) return 0.7;
   if (b > 0.8) return -0.7;
-  // Linear: 0.5 → 0 (neutral at midpoint)
+  // Linear: 0.5 -> 0 (neutral at midpoint)
   return (0.5 - b) * 2;
 }

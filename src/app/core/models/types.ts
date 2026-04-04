@@ -53,6 +53,7 @@ export interface BotConfig {
   strategy: StrategyType;
   strategyParams: StrategyParams;
   riskParams: RiskParams;
+  botIntervalSec: number;
 }
 
 export interface Trade {
@@ -131,4 +132,5 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   strategy: 'COMPOSITE',
   strategyParams: DEFAULT_STRATEGY_PARAMS,
   riskParams: DEFAULT_RISK_PARAMS,
+  botIntervalSec: 30,
 };

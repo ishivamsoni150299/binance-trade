@@ -1,4 +1,4 @@
-import { calcEma } from './ema';
+﻿import { calcEma } from './ema';
 
 export interface MacdResult {
   macdLine: number;
@@ -17,8 +17,7 @@ export function calcMacd(
   const fastEma = calcEma(closes, fast);
   const slowEma = calcEma(closes, slow);
 
-  // Align arrays — slow EMA starts later
-  const offset = closes.length - slowEma.length;
+  // Align arrays - slow EMA starts later
   const macdValues: number[] = [];
   for (let i = 0; i < slowEma.length; i++) {
     macdValues.push(fastEma[i + (fastEma.length - slowEma.length)] - slowEma[i]);

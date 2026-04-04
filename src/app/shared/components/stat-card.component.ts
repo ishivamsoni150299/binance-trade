@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+﻿import { Component, input } from '@angular/core';
 
 @Component({
   selector: 'app-stat-card',
@@ -9,7 +9,7 @@ import { Component, input } from '@angular/core';
         <span class="stat-label">{{ label() }}</span>
         @if (trend() !== 0) {
           <span class="trend-arrow" [class.trend-up]="trend()! > 0" [class.trend-down]="trend()! < 0">
-            {{ trend()! > 0 ? '↑' : '↓' }}
+            {{ trend()! > 0 ? 'UP' : 'DOWN' }}
           </span>
         }
       </div>
@@ -41,7 +41,7 @@ import { Component, input } from '@angular/core';
       margin-bottom: 10px;
     }
     .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; font-weight: 600; }
-    .trend-arrow { font-size: 14px; font-weight: 700; }
+    .trend-arrow { font-size: 12px; font-weight: 700; }
     .trend-up { color: var(--green); }
     .trend-down { color: var(--red); }
     .stat-value { font-size: 26px; font-weight: 700; color: var(--text-primary); line-height: 1; }

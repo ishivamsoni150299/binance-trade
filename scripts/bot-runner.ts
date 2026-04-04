@@ -1,6 +1,6 @@
-/**
- * Standalone bot runner — executed directly by GitHub Actions
- * GitHub's servers are NOT blocked by Binance (unlike Vercel/AWS us-east-1)
+﻿/**
+ * Standalone bot runner - executed directly by GitHub Actions
+ * GitHub servers are not blocked by Binance (unlike some hosting IPs)
  *
  * Run: npx ts-node scripts/bot-runner.ts
  * Env: BINANCE_API_KEY, BINANCE_API_SECRET, BINANCE_TESTNET, BOT_PAIR, BOT_TIMEFRAME
@@ -10,7 +10,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-// ── Config from env ──────────────────────────────────────────────────────────
+// Config from env
 const API_KEY    = process.env['BINANCE_API_KEY'] ?? '';
 const API_SECRET = process.env['BINANCE_API_SECRET'] ?? '';
 const TESTNET    = process.env['BINANCE_TESTNET'] === 'true';
@@ -27,7 +27,7 @@ const PUBLIC_HOSTS = TESTNET
   ? ['https://testnet.binance.vision', 'https://api.binance.com', 'https://api1.binance.com']
   : ['https://api.binance.com', 'https://api1.binance.com', 'https://api2.binance.com', 'https://api3.binance.com'];
 
-// ── Binance helpers ──────────────────────────────────────────────────────────
+// Binance helpers
 function sign(qs: string): string {
   return crypto.createHmac('sha256', API_SECRET).update(qs).digest('hex');
 }
@@ -94,7 +94,7 @@ async function placeMarketOrder(symbol: string, side: 'BUY'|'SELL', quantity: nu
   }, true);
 }
 
-// ── Indicators ───────────────────────────────────────────────────────────────
+// Indicators
 function calcEma(vals: number[], period: number): number[] {
   if (vals.length < period) return [];
   const k = 2 / (period + 1);
@@ -170,7 +170,7 @@ function compositeSignal(closes: number[]): { action: 'BUY'|'SELL'|'HOLD', score
   return { action, score, rsi, macd, bb, ema };
 }
 
-// ── Wallet snapshot (saved to wallet.json in repo) ───────────────────────────
+// Wallet snapshot (saved to wallet.json in repo)
 const WALLET_FILE = path.join(process.cwd(), 'wallet.json');
 
 async function saveWallet(): Promise<void> {
@@ -204,7 +204,7 @@ async function saveWallet(): Promise<void> {
   }
 }
 
-// ── Trade log (appended to trades.json in repo) ──────────────────────────────
+// Trade log (appended to trades.json in repo)
 const TRADES_FILE = path.join(process.cwd(), 'trades.json');
 
 function loadTrades(): any[] {
@@ -220,7 +220,7 @@ function saveTrade(trade: any): void {
   console.log('Trade saved to trades.json');
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+// Main
 async function main() {
   console.log(`\n=== BTrader Bot [${new Date().toISOString()}] ===`);
   console.log(`Pair: ${PAIR} | Timeframe: ${TIMEFRAME} | Mode: ${PAPER ? 'PAPER' : 'LIVE'} | Testnet: ${TESTNET}`);
@@ -244,7 +244,7 @@ async function main() {
   console.log(`Signal: ${signal.action} | Score: ${(signal.score * 100).toFixed(0)} | RSI:${(signal.rsi * 100).toFixed(0)} MACD:${(signal.macd * 100).toFixed(0)} BB:${(signal.bb * 100).toFixed(0)} EMA:${(signal.ema * 100).toFixed(0)}`);
 
   if (signal.action === 'HOLD') {
-    console.log('Action: HOLD — no trade');
+    console.log('Action: HOLD - no trade');
     return;
   }
 
@@ -293,9 +293,9 @@ async function main() {
     trade.binanceOrderId = order.orderId;
     trade.entryPrice = parseFloat(order.fills?.[0]?.price ?? String(currentPrice));
     trade.quantity = parseFloat(order.executedQty);
-    console.log(`✅ LIVE ORDER placed: ${signal.action} ${trade.quantity} ${PAIR} @ $${trade.entryPrice}`);
+    console.log(`LIVE ORDER placed: ${signal.action} ${trade.quantity} ${PAIR} @ $${trade.entryPrice}`);
   } else {
-    console.log(`📝 PAPER trade: ${signal.action} ${quantity.toFixed(5)} ${PAIR} @ $${currentPrice}`);
+    console.log(`PAPER trade: ${signal.action} ${quantity.toFixed(5)} ${PAIR} @ $${currentPrice}`);
   }
 
   saveTrade(trade);
@@ -305,7 +305,7 @@ async function main() {
 
 main().catch(err => {
   console.error('Bot error:', err.message);
-  // Exit 0 for network errors so GitHub Actions doesn't mark the run as failed
+  // Exit 0 for network errors so GitHub Actions does not mark the run as failed
   const isNetworkError = err.message?.includes('Binance hosts failed') || err.message?.includes('fetch');
   process.exit(isNetworkError ? 0 : 1);
 });

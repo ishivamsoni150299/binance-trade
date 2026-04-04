@@ -1,59 +1,52 @@
-# Binancetradesaas
+﻿# Binancetradesaas
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 19.2.23.
+An Angular + Vercel serverless app for an AI-assisted automated trading workflow.
 
-## Development server
+## Quick Start
 
-To start a local development server, run:
-
-```bash
-ng serve
-```
-
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
-
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+1. Install dependencies:
 
 ```bash
-ng generate component component-name
+npm install
 ```
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+2. Start the dev app:
 
 ```bash
-ng generate --help
+npm run start
 ```
 
-## Building
-
-To build the project run:
+3. (Optional) Run Vercel serverless locally:
 
 ```bash
-ng build
+npx vercel dev
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+The UI will be at `http://localhost:4200`.
 
-## Running unit tests
+## Environment Variables
 
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
+Copy `.env.example` values into Vercel environment variables:
 
-```bash
-ng test
-```
+- `BINANCE_API_KEY`
+- `BINANCE_API_SECRET`
+- `BINANCE_TESTNET`
+- `BOT_SECRET`
 
-## Running end-to-end tests
+## Project Structure
 
-For end-to-end (e2e) testing, run:
+- `src/` Angular UI
+- `api/` Vercel serverless endpoints
+- `scripts/` GitHub Actions bot runner
 
-```bash
-ng e2e
-```
+## Scripts
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+- `npm run start` Start Angular dev server (proxying `/api`)
+- `npm run build` Production build
+- `npm run test` Unit tests
 
-## Additional Resources
+## Notes
 
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+- The UI uses `/api/market/*` endpoints to avoid Binance CORS issues.
+- Bot cycles run in a Web Worker when the UI is open.
+- GitHub Actions can call the bot endpoint on a schedule.

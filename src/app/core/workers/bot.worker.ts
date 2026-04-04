@@ -21,6 +21,10 @@ self.onmessage = (evt) => {
 
     case 'UPDATE_CONFIG':
       config = payload.config;
+      if (payload.intervalMs && intervalId) {
+        clearInterval(intervalId);
+        intervalId = setInterval(runBotCycle, payload.intervalMs);
+      }
       break;
   }
 };

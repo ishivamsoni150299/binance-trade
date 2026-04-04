@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+﻿import { Component } from '@angular/core';
 import { ConfigService } from '../../core/services/config.service';
 
 @Component({
@@ -11,7 +11,7 @@ import { ConfigService } from '../../core/services/config.service';
       <div class="settings-grid">
         <!-- API Key instructions -->
         <div class="settings-section">
-          <h2>🔑 Binance API Keys</h2>
+          <h2>Binance API Keys</h2>
           <p class="info-text">
             For security, API keys are <strong>never stored in the browser</strong>. They are set as
             environment variables in your Vercel project and used only server-side.
@@ -21,14 +21,14 @@ import { ConfigService } from '../../core/services/config.service';
               <span class="step-num">1</span>
               <div>
                 <strong>Create API Key on Binance</strong>
-                <p>Go to Binance → Profile → API Management. Create a key with <em>Spot Trading</em> permission only. Never enable withdrawals.</p>
+                <p>Go to Binance > Profile > API Management. Create a key with <em>Spot Trading</em> permission only. Never enable withdrawals.</p>
               </div>
             </div>
             <div class="step">
               <span class="step-num">2</span>
               <div>
                 <strong>Add to Vercel</strong>
-                <p>In your Vercel project → Settings → Environment Variables, add:</p>
+                <p>In your Vercel project > Settings > Environment Variables, add:</p>
                 <code class="code-block">BINANCE_API_KEY=your_api_key
 BINANCE_API_SECRET=your_api_secret
 BINANCE_TESTNET=true
@@ -39,7 +39,7 @@ BOT_SECRET=any-random-secret-string</code>
               <span class="step-num">3</span>
               <div>
                 <strong>Add to GitHub Actions</strong>
-                <p>In your GitHub repo → Settings → Secrets → Actions, add <code>BOT_SECRET</code> with the same value.</p>
+                <p>In your GitHub repo > Settings > Secrets > Actions, add <code>BOT_SECRET</code> with the same value.</p>
               </div>
             </div>
             <div class="step">
@@ -54,10 +54,10 @@ BOT_SECRET=any-random-secret-string</code>
 
         <!-- GitHub Actions -->
         <div class="settings-section">
-          <h2>⏰ Always-On Bot (GitHub Actions)</h2>
+          <h2>Always-On Bot (GitHub Actions)</h2>
           <p class="info-text">
             The bot runs in your browser when you have the tab open. For <strong>24/7 automated trading</strong>,
-            GitHub Actions will call the bot endpoint every 5 minutes — completely free.
+            GitHub Actions will call the bot endpoint every 5 minutes.
           </p>
           <div class="steps">
             <div class="step">
@@ -71,7 +71,7 @@ BOT_SECRET=any-random-secret-string</code>
               <span class="step-num">2</span>
               <div>
                 <strong>Set secrets</strong>
-                <p>Add these secrets in GitHub → Settings → Secrets:</p>
+                <p>Add these secrets in GitHub > Settings > Secrets:</p>
                 <code class="code-block">BOT_SECRET=same-value-as-vercel
 APP_URL=https://your-app.vercel.app</code>
               </div>
@@ -88,11 +88,11 @@ APP_URL=https://your-app.vercel.app</code>
 
         <!-- Bot interval -->
         <div class="settings-section">
-          <h2>⚡ Bot Check Interval</h2>
+          <h2>Bot Check Interval</h2>
           <p class="info-text">How often the browser-based bot checks for signals (when tab is open).</p>
           <div class="interval-options">
             @for (opt of intervalOptions; track opt.value) {
-              <button class="interval-btn" [class.active]="browserInterval === opt.value" (click)="browserInterval = opt.value">
+              <button class="interval-btn" [class.active]="config.config().botIntervalSec === opt.value" (click)="setInterval(opt.value)">
                 {{ opt.label }}
               </button>
             }
@@ -102,7 +102,7 @@ APP_URL=https://your-app.vercel.app</code>
 
         <!-- About -->
         <div class="settings-section">
-          <h2>ℹ About</h2>
+          <h2>About</h2>
           <div class="about-list">
             <div class="about-row"><span>Version</span><span>1.0.0</span></div>
             <div class="about-row"><span>Framework</span><span>Angular 19</span></div>
@@ -112,7 +112,7 @@ APP_URL=https://your-app.vercel.app</code>
             <div class="about-row"><span>Exchange</span><span>Binance Spot</span></div>
           </div>
           <p class="disclaimer">
-            ⚠ <strong>Disclaimer:</strong> This tool is for educational purposes. Crypto trading involves significant risk.
+            <strong>Disclaimer:</strong> This tool is for educational purposes. Crypto trading involves significant risk.
             Never trade more than you can afford to lose. Always start with paper trading.
           </p>
         </div>
@@ -161,7 +161,6 @@ APP_URL=https://your-app.vercel.app</code>
   `]
 })
 export class SettingsComponent {
-  browserInterval = 30;
   intervalOptions = [
     { value: 15, label: '15s' },
     { value: 30, label: '30s' },
@@ -170,4 +169,8 @@ export class SettingsComponent {
   ];
 
   constructor(readonly config: ConfigService) {}
+
+  setInterval(seconds: number): void {
+    this.config.update({ botIntervalSec: seconds });
+  }
 }

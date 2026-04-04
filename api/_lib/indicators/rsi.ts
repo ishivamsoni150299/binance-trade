@@ -1,4 +1,4 @@
-/** RSI — Wilder smoothing method */
+﻿/** RSI - Wilder smoothing method */
 export function calcRsi(closes: number[], period = 14): number {
   if (closes.length < period + 1) return 50;
 
@@ -27,7 +27,7 @@ export function calcRsi(closes: number[], period = 14): number {
   return 100 - 100 / (1 + rs);
 }
 
-/** Returns score: +1 (oversold→buy), -1 (overbought→sell), 0 (neutral) */
+/** Returns score: +1 (oversold -> buy), -1 (overbought -> sell), 0 (neutral) */
 export function rsiScore(
   closes: number[],
   period = 14,

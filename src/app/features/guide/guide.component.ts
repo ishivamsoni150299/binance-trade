@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+﻿import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 @Component({
@@ -14,10 +14,10 @@ import { RouterLink } from '@angular/router';
 
       <!-- What is this app -->
       <div class="explainer-hero">
-        <div class="eh-icon">🤖</div>
+        <div class="eh-icon">BOT</div>
         <div class="eh-text">
           <h2>BTrader is your personal automated trading bot</h2>
-          <p>It watches the crypto market 24/7, detects buy/sell signals using AI indicators, and places trades on Binance <strong>automatically</strong> — even when your browser is closed.</p>
+          <p>It watches the crypto market 24/7, detects buy or sell signals using AI indicators, and places trades on Binance automatically - even when your browser is closed.</p>
         </div>
       </div>
 
@@ -26,47 +26,47 @@ import { RouterLink } from '@angular/router';
       <div class="flow-steps">
         <div class="flow-step">
           <div class="fs-num">1</div>
-          <div class="fs-icon">📊</div>
+          <div class="fs-icon">DATA</div>
           <div class="fs-title">Reads Market Data</div>
           <div class="fs-desc">Every 5 minutes, the bot fetches the last 200 candles of BTC/USDT price history from Binance</div>
         </div>
-        <div class="flow-arrow">→</div>
+        <div class="flow-arrow">-></div>
         <div class="flow-step">
           <div class="fs-num">2</div>
-          <div class="fs-icon">🧠</div>
+          <div class="fs-icon">SIG</div>
           <div class="fs-title">Calculates Signals</div>
           <div class="fs-desc">4 indicators are scored: RSI, MACD, Bollinger Bands, and EMA. Combined into one score from -100 to +100</div>
         </div>
-        <div class="flow-arrow">→</div>
+        <div class="flow-arrow">-></div>
         <div class="flow-step">
           <div class="fs-num">3</div>
-          <div class="fs-icon">⚡</div>
+          <div class="fs-icon">RULES</div>
           <div class="fs-title">Decides to Trade</div>
           <div class="fs-desc">Score above 50 = BUY. Score below -50 = SELL. Between = HOLD (do nothing)</div>
         </div>
-        <div class="flow-arrow">→</div>
+        <div class="flow-arrow">-></div>
         <div class="flow-step">
           <div class="fs-num">4</div>
-          <div class="fs-icon">✅</div>
+          <div class="fs-icon">ORDER</div>
           <div class="fs-title">Places Order</div>
           <div class="fs-desc">In paper mode: logs a fake trade. In live mode: places a real market order on your Binance account</div>
         </div>
       </div>
 
       <!-- Two modes -->
-      <div class="section-title">Two modes — start safe</div>
+      <div class="section-title">Two modes - start safe</div>
       <div class="modes-grid">
         <div class="mode-card paper-card">
           <div class="mc-badge">YOU ARE HERE</div>
-          <div class="mc-icon">📝</div>
+          <div class="mc-icon">PAPER</div>
           <div class="mc-title">Paper Trading (Safe)</div>
-          <div class="mc-desc">Trades with fake $10,000. No real money. Perfect for testing and learning how the bot performs.</div>
-          <div class="mc-status active">✓ Currently Active</div>
+          <div class="mc-desc">Trades with a simulated $10,000. No real money. Perfect for testing and learning how the bot performs.</div>
+          <div class="mc-status active">Active</div>
         </div>
         <div class="mode-card live-card">
-          <div class="mc-icon">⚡</div>
+          <div class="mc-icon">LIVE</div>
           <div class="mc-title">Live Trading (Real Money)</div>
-          <div class="mc-desc">Uses your actual Binance balance. Only switch to this after you've seen consistent profit in paper mode for 2–4 weeks.</div>
+          <div class="mc-desc">Uses your actual Binance balance. Only switch to this after you have seen consistent profit in paper mode for 2-4 weeks.</div>
           <div class="mc-status">Switch when ready</div>
         </div>
       </div>
@@ -75,34 +75,34 @@ import { RouterLink } from '@angular/router';
       <div class="section-title">What runs 24/7 automatically</div>
       <div class="auto-grid">
         <div class="auto-card">
-          <div class="ac-icon">⚙️</div>
+          <div class="ac-icon">ACTIONS</div>
           <div class="ac-title">GitHub Actions</div>
-          <div class="ac-desc">A free server that runs the bot every 5 minutes — even when your computer is off and browser is closed</div>
+          <div class="ac-desc">A free server that runs the bot every 5 minutes - even when your computer is off and browser is closed</div>
           <div class="ac-link">
-            <a href="https://github.com/ishivamsoni150299/binance-trade/actions" target="_blank" class="ac-btn">View runs →</a>
+            <a href="https://github.com/ishivamsoni150299/binance-trade/actions" target="_blank" class="ac-btn">View runs</a>
           </div>
         </div>
         <div class="auto-card">
-          <div class="ac-icon">🌐</div>
+          <div class="ac-icon">WEB</div>
           <div class="ac-title">Vercel (This Website)</div>
           <div class="ac-desc">Hosts your dashboard. Shows you live prices, trades, and bot status in real time</div>
           <div class="ac-link">
-            <a href="https://binance-trade-two.vercel.app" target="_blank" class="ac-btn">Open dashboard →</a>
+            <a href="https://binance-trade-two.vercel.app" target="_blank" class="ac-btn">Open dashboard</a>
           </div>
         </div>
         <div class="auto-card">
-          <div class="ac-icon">📡</div>
+          <div class="ac-icon">WS</div>
           <div class="ac-title">Binance WebSocket</div>
-          <div class="ac-desc">Live price stream connected directly to Binance. Updates every second — you see the real market price</div>
+          <div class="ac-desc">Live price stream connected directly to Binance. Updates every second - you see the real market price</div>
         </div>
       </div>
 
       <!-- Step by step guide -->
-      <div class="section-title">Your action plan — 3 simple steps</div>
+      <div class="section-title">Your action plan - 3 simple steps</div>
       <div class="action-steps">
 
         <div class="action-step done">
-          <div class="as-check">✓</div>
+          <div class="as-check">OK</div>
           <div class="as-content">
             <div class="as-title">Step 1: Setup complete</div>
             <div class="as-desc">Your app is deployed, GitHub Actions is running every 5 min, paper wallet shows $10,000 USDT. Everything is working.</div>
@@ -113,7 +113,7 @@ import { RouterLink } from '@angular/router';
           <div class="as-num">2</div>
           <div class="as-content">
             <div class="as-title">Step 2: Watch the bot trade in paper mode</div>
-            <div class="as-desc">For the next 2–4 weeks, just watch. The bot will automatically place fake trades. Go to <strong>Trade History</strong> to see results. If you see consistent profit — you're ready for real money.</div>
+            <div class="as-desc">For the next 2-4 weeks, just watch. The bot will automatically place simulated trades. Go to <strong>Trade History</strong> to see results. If you see consistent profit, you are ready for real money.</div>
             <div class="as-actions">
               <a routerLink="/trades" class="as-btn primary">View Trade History</a>
               <a routerLink="/bot" class="as-btn secondary">Adjust Strategy</a>
@@ -125,9 +125,9 @@ import { RouterLink } from '@angular/router';
           <div class="as-num">3</div>
           <div class="as-content">
             <div class="as-title">Step 3: Switch to Live Trading (when profitable)</div>
-            <div class="as-desc">When you're confident, go to GitHub Actions variables and change <code>BOT_PAPER_TRADING</code> from <code>true</code> to <code>false</code>. The bot will then place real orders using your Binance API key.</div>
+            <div class="as-desc">When you are confident, go to GitHub Actions variables and change <code>BOT_PAPER_TRADING</code> from <code>true</code> to <code>false</code>. The bot will then place real orders using your Binance API key.</div>
             <div class="as-actions">
-              <a href="https://github.com/ishivamsoni150299/binance-trade/settings/variables/actions" target="_blank" class="as-btn secondary">GitHub Variables →</a>
+              <a href="https://github.com/ishivamsoni150299/binance-trade/settings/variables/actions" target="_blank" class="as-btn secondary">GitHub Variables</a>
             </div>
           </div>
         </div>
@@ -168,19 +168,19 @@ import { RouterLink } from '@angular/router';
       <div class="faq-list">
         <div class="faq-item">
           <div class="faq-q">Is my money safe right now?</div>
-          <div class="faq-a">Yes. You are in <strong>Paper Trading mode</strong>. The bot only trades with a fake $10,000. No real Binance orders are being placed.</div>
+          <div class="faq-a">Yes. You are in <strong>Paper Trading mode</strong>. The bot only trades with a simulated $10,000. No real Binance orders are being placed.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">What if the bot loses money in paper mode?</div>
-          <div class="faq-a">That's fine — and actually useful. Go to <strong>Bot Config</strong> and adjust the strategy. Try different pairs (ETH, SOL), timeframes (1h, 4h), or tweak the RSI/EMA parameters.</div>
+          <div class="faq-a">That is fine and actually useful. Go to <strong>Bot Config</strong> and adjust the strategy. Try different pairs (ETH, SOL), timeframes (1h, 4h), or tweak the RSI/EMA parameters.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">How do I know the bot is running?</div>
-          <div class="faq-a">Check <a href="https://github.com/ishivamsoni150299/binance-trade/actions" target="_blank">GitHub Actions</a> — you'll see a green checkmark every 5 minutes. Also check <code>trades.json</code> in the repo — it gets updated with each trade.</div>
+          <div class="faq-a">Check <a href="https://github.com/ishivamsoni150299/binance-trade/actions" target="_blank">GitHub Actions</a> - you will see a green checkmark every 5 minutes. Also check <code>trades.json</code> in the repo - it gets updated with each trade.</div>
         </div>
         <div class="faq-item">
           <div class="faq-q">How much can I realistically make?</div>
-          <div class="faq-a">In paper mode the bot uses 5% position size on a $10,000 balance = $500 per trade. With a good win rate (55-65%) and 2:1 risk/reward, expect 3-8% monthly return. <strong>But crypto is risky — never trade more than you can afford to lose.</strong></div>
+          <div class="faq-a">In paper mode the bot uses 5% position size on a $10,000 balance = $500 per trade. With a good win rate (55-65%) and 2:1 risk/reward, expect 3-8% monthly return. <strong>But crypto is risky - never trade more than you can afford to lose.</strong></div>
         </div>
         <div class="faq-item">
           <div class="faq-q">Can I run it on multiple coins?</div>
@@ -203,7 +203,7 @@ import { RouterLink } from '@angular/router';
       border: 1px solid rgba(59,130,246,0.2);
       border-radius: 14px; padding: 24px; margin-bottom: 32px;
     }
-    .eh-icon { font-size: 48px; flex-shrink: 0; }
+    .eh-icon { font-size: 20px; font-weight: 800; flex-shrink: 0; color: var(--text-muted); }
     .eh-text h2 { font-size: 18px; font-weight: 700; margin: 0 0 8px; }
     .eh-text p { font-size: 14px; color: var(--text-secondary); margin: 0; line-height: 1.7; }
 
@@ -221,14 +221,14 @@ import { RouterLink } from '@angular/router';
       flex: 1; background: var(--bg-card); border: 1px solid var(--border);
       border-radius: 12px; padding: 18px 16px; text-align: center; position: relative;
     }
-    .flow-arrow { font-size: 20px; color: var(--text-muted); padding: 0 8px; margin-top: 40px; flex-shrink: 0; }
+    .flow-arrow { font-size: 16px; color: var(--text-muted); padding: 0 8px; margin-top: 40px; flex-shrink: 0; }
     .fs-num {
       position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
       width: 20px; height: 20px; border-radius: 50%; background: var(--blue);
       font-size: 11px; font-weight: 800; color: white;
       display: flex; align-items: center; justify-content: center;
     }
-    .fs-icon { font-size: 28px; margin-bottom: 8px; }
+    .fs-icon { font-size: 12px; font-weight: 700; margin-bottom: 8px; color: var(--text-muted); }
     .fs-title { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
     .fs-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 
@@ -244,7 +244,7 @@ import { RouterLink } from '@angular/router';
       background: var(--green); color: white;
       font-size: 9px; font-weight: 800; padding: 2px 8px; border-radius: 10px; letter-spacing: 0.05em;
     }
-    .mc-icon { font-size: 32px; margin-bottom: 10px; }
+    .mc-icon { font-size: 12px; font-weight: 700; margin-bottom: 10px; color: var(--text-muted); }
     .mc-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
     .mc-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 12px; }
     .mc-status { font-size: 12px; font-weight: 600; color: var(--text-muted); }
@@ -256,7 +256,7 @@ import { RouterLink } from '@angular/router';
       background: var(--bg-card); border: 1px solid var(--border);
       border-radius: 12px; padding: 18px;
     }
-    .ac-icon { font-size: 28px; margin-bottom: 10px; }
+    .ac-icon { font-size: 12px; font-weight: 700; margin-bottom: 10px; color: var(--text-muted); }
     .ac-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
     .ac-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 12px; }
     .ac-btn {
@@ -275,7 +275,7 @@ import { RouterLink } from '@angular/router';
     .action-step.current { border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.05); }
     .as-check {
       width: 32px; height: 32px; border-radius: 50%; background: var(--green);
-      color: white; font-size: 14px; font-weight: 800;
+      color: white; font-size: 12px; font-weight: 800;
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
     .as-num {

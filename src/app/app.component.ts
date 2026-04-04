@@ -1,8 +1,9 @@
-import { Component, OnInit, signal } from '@angular/core';
+﻿import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { SidebarComponent } from './shared/components/sidebar.component';
 import { BinanceWsService } from './core/services/binance-ws.service';
 import { ConfigService } from './core/services/config.service';
+import { ApiService } from './core/services/api.service';
 
 interface TickerItem { symbol: string; price: string; changePct: number; }
 
@@ -25,7 +26,7 @@ interface TickerItem { symbol: string; price: string; changePct: number; }
                   {{ item.changePct >= 0 ? '+' : '' }}{{ item.changePct.toFixed(2) }}%
                 </span>
               </div>
-              <span class="strip-sep">·</span>
+              <span class="strip-sep">|</span>
             }
           </div>
         </div>
@@ -67,12 +68,14 @@ interface TickerItem { symbol: string; price: string; changePct: number; }
     .strip-chg { font-size: 11px; font-weight: 600; }
     .strip-chg.up { color: var(--green); }
     .strip-chg.dn { color: var(--red); }
-    .strip-sep { color: var(--border); font-size: 14px; }
+    .strip-sep { color: var(--border); font-size: 12px; }
 
     .main-content { flex: 1; overflow-y: auto; overflow-x: hidden; }
   `]
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
+  private marketTimer: ReturnType<typeof setInterval> | null = null;
+
   marketTickers = signal<TickerItem[]>([
     { symbol: 'BTC/USDT', price: '...', changePct: 0 },
     { symbol: 'ETH/USDT', price: '...', changePct: 0 },
@@ -82,29 +85,35 @@ export class AppComponent implements OnInit {
     { symbol: 'ADA/USDT', price: '...', changePct: 0 },
   ]);
 
-  constructor(private ws: BinanceWsService, private config: ConfigService) {}
+  constructor(
+    private ws: BinanceWsService,
+    private config: ConfigService,
+    private api: ApiService,
+  ) {}
 
   ngOnInit(): void {
     this.ws.connect(this.config.pair(), this.config.timeframe());
-    // Fetch prices for market strip from Binance public API
     this.loadMarketTickers();
-    setInterval(() => this.loadMarketTickers(), 30000);
+    this.marketTimer = setInterval(() => this.loadMarketTickers(), 30000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.marketTimer) clearInterval(this.marketTimer);
   }
 
   private async loadMarketTickers(): Promise<void> {
     const symbols = ['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT','ADAUSDT','DOGEUSDT','DOTUSDT'];
     try {
-      const url = `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      const data = await res.json();
+      const data = await this.api.getTickersBySymbols(symbols);
       if (!Array.isArray(data)) return;
       const tickers: TickerItem[] = data.map((t: any) => ({
         symbol: t.symbol.replace('USDT', '/USDT'),
         price: parseFloat(t.lastPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: t.symbol === 'BTCUSDT' ? 2 : 4 }),
         changePct: parseFloat(t.priceChangePercent),
       }));
-      // Duplicate for seamless marquee loop
       this.marketTickers.set([...tickers, ...tickers]);
-    } catch { /* keep previous values */ }
+    } catch {
+      /* keep previous values */
+    }
   }
 }

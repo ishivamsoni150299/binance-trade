@@ -1,16 +1,12 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+﻿import { Component, OnInit, signal, computed } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
 import { RouterLink } from '@angular/router';
 import { BinanceWsService } from '../../core/services/binance-ws.service';
 import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
 import { TradeStoreService } from '../../core/services/trade-store.service';
 import { ConfigService } from '../../core/services/config.service';
+import { ApiService, WalletBalance } from '../../core/services/api.service';
 import { StatCardComponent } from '../../shared/components/stat-card.component';
-
-interface WalletBalance { asset: string; free: number; locked: number; total: number; }
-interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: number; }
 
 @Component({
   selector: 'app-dashboard',
@@ -45,7 +41,7 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
                 \${{ t.price.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) }}
               </span>
               <span class="hero-change" [class.up]="t.priceChangePct >= 0" [class.dn]="t.priceChangePct < 0">
-                {{ t.priceChangePct >= 0 ? '▲' : '▼' }} {{ t.priceChangePct.toFixed(2) }}%
+                {{ t.priceChangePct >= 0 ? 'UP' : 'DOWN' }} {{ t.priceChangePct.toFixed(2) }}%
               </span>
             </div>
           </div>
@@ -68,16 +64,15 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
             <div class="hs-col">
               <span class="hs-label">24H Change</span>
               <span class="hs-val" [class.up]="t.priceChangePct >= 0" [class.dn]="t.priceChangePct < 0">
-                {{ t.priceChangePct >= 0 ? '+' : '' }}\${{ Math.abs(t.price - t.price/(1+t.priceChangePct/100)).toFixed(2) }}
+                {{ t.priceChangePct >= 0 ? '+' : '-' }}\${{ Math.abs(t.price - t.price/(1+t.priceChangePct/100)).toFixed(2) }}
               </span>
             </div>
           </div>
           <div class="hero-actions">
             <button class="btn-start" [class.running]="bot.status() === 'running'" (click)="toggleBot()">
-              <span>{{ bot.status() === 'running' ? '⏹' : '▶' }}</span>
               {{ bot.status() === 'running' ? 'Stop Bot' : 'Start Bot' }}
             </button>
-            <a routerLink="/chart" class="btn-chart">📈 Chart</a>
+            <a routerLink="/chart" class="btn-chart">Chart</a>
           </div>
         </div>
       } @else {
@@ -110,11 +105,11 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
           [sub]="'Avg ' + tradeStore.stats().avgPnlPct.toFixed(2) + '% / trade'" />
         <app-stat-card label="Open Positions"
           [value]="tradeStore.openTrades().length.toString()"
-          [sub]="'Bot: ' + bot.status() + (bot.cycleCount() > 0 ? ' · ' + bot.cycleCount() + ' cycles' : '')" />
+          [sub]="'Bot: ' + bot.status() + (bot.cycleCount() > 0 ? ' - ' + bot.cycleCount() + ' cycles' : '')" />
         <app-stat-card label="Paper Balance"
           [value]="walletUSDT()"
           [isPositive]="walletIsPaper()"
-          [sub]="walletIsPaper() ? 'Simulated · Updated ' + (walletUpdatedAt() | date:'HH:mm') : 'Live account'" />
+          [sub]="walletIsPaper() ? 'Simulated - Updated ' + (walletUpdatedAt() | date:'HH:mm') : 'Live account'" />
       </div>
 
       <!-- Middle: Signal card + Bot activity + Wallet -->
@@ -133,7 +128,7 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
             <div class="sig-body">
               <div class="sig-top">
                 <div class="sig-action-block" [class]="'sig-' + r.action.toLowerCase()">
-                  <span class="sig-icon">{{ r.action === 'BUY' ? '↑' : r.action === 'SELL' ? '↓' : '→' }}</span>
+                  <span class="sig-icon">{{ r.action === 'BUY' ? '^' : r.action === 'SELL' ? 'v' : '-' }}</span>
                   <span class="sig-label">{{ r.action }}</span>
                 </div>
                 <div class="sig-score-block">
@@ -147,7 +142,7 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
                     <div class="sib-bar-fill" [class.up]="r.score >= 0" [class.dn]="r.score < 0"
                       [style.width.%]="Math.abs(r.score) * 100"></div>
                   </div>
-                  <div class="sib-price">\${{ r.price ? r.price.toLocaleString('en-US',{minimumFractionDigits:2}) : '—' }}</div>
+                  <div class="sib-price">\${{ r.price ? r.price.toLocaleString('en-US',{minimumFractionDigits:2}) : '-' }}</div>
                 </div>
               </div>
 
@@ -170,8 +165,8 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
             </div>
           } @else {
             <div class="sig-empty">
-              <div class="sig-empty-icon">📡</div>
-              <p>Waiting for signal…</p>
+              <div class="sig-empty-icon">Signal</div>
+              <p>Waiting for signal...</p>
               <button class="btn-start-sm" (click)="toggleBot()">Start Bot</button>
             </div>
           }
@@ -189,7 +184,7 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
               @if (walletUpdatedAt() > 0) {
                 <span class="panel-time">{{ walletUpdatedAt() | date:'HH:mm' }}</span>
               }
-              <button class="refresh-btn" (click)="loadWallet()" [disabled]="walletLoading()">↻</button>
+              <button class="refresh-btn" (click)="loadWallet()" [disabled]="walletLoading()">Refresh</button>
             </div>
           </div>
 
@@ -197,7 +192,7 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
             <div class="skeleton" style="height:18px;margin-bottom:8px;border-radius:4px"></div>
             <div class="skeleton" style="height:18px;width:70%;border-radius:4px"></div>
           } @else if (walletError()) {
-            <div class="wallet-err">⚠ {{ walletError() }}</div>
+            <div class="wallet-err">{{ walletError() }}</div>
           } @else {
             <div class="wallet-list">
               @for (b of walletBalances(); track b.asset) {
@@ -231,7 +226,7 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
 
           @if (tradeStore.openTrades().length === 0) {
             <div class="pos-empty">
-              <span class="pos-empty-icon">◎</span>
+              <span class="pos-empty-icon">None</span>
               <p>No open positions</p>
             </div>
           } @else {
@@ -266,10 +261,10 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
 
       <!-- Bottom quick actions -->
       <div class="bottom-bar">
-        <a routerLink="/chart" class="bb-btn">📈 Live Chart</a>
-        <a routerLink="/bot" class="bb-btn">⚙ Bot Config</a>
-        <a routerLink="/trades" class="bb-btn">📋 Trade History</a>
-        <a routerLink="/settings" class="bb-btn">⚙ Settings</a>
+        <a routerLink="/chart" class="bb-btn">Live Chart</a>
+        <a routerLink="/bot" class="bb-btn">Bot Config</a>
+        <a routerLink="/trades" class="bb-btn">Trade History</a>
+        <a routerLink="/settings" class="bb-btn">Settings</a>
       </div>
 
     </div>
@@ -326,7 +321,7 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
     .hs-val.dn { color:var(--red); }
     .hero-actions { display:flex; gap:10px; flex-shrink:0; flex-direction:column; }
     .btn-start {
-      display:flex; align-items:center; gap:8px; padding:10px 18px;
+      display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px;
       border-radius:8px; border:none; cursor:pointer; font-size:13px; font-weight:700;
       background:var(--blue); color:white; transition:all 0.15s; white-space:nowrap;
     }
@@ -357,9 +352,9 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
     .mode-tag.paper { background:rgba(245,158,11,0.15); color:var(--yellow); }
     .mode-tag.live { background:rgba(239,83,80,0.1); color:var(--red); }
     .refresh-btn {
-      width:24px; height:24px; border-radius:5px; border:1px solid var(--border);
-      background:var(--bg-hover); color:var(--text-secondary); cursor:pointer; font-size:13px;
-      display:flex; align-items:center; justify-content:center;
+      height:24px; border-radius:5px; border:1px solid var(--border);
+      background:var(--bg-hover); color:var(--text-secondary); cursor:pointer; font-size:12px;
+      display:flex; align-items:center; justify-content:center; padding:0 10px;
     }
     .refresh-btn:hover { color:var(--text-primary); }
     .refresh-btn:disabled { opacity:0.4; cursor:not-allowed; }
@@ -404,7 +399,7 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
     .ind-num.up { color:var(--green); }
     .ind-num.dn { color:var(--red); }
     .sig-empty { text-align:center; padding:24px 0; color:var(--text-muted); }
-    .sig-empty-icon { font-size:36px; display:block; margin-bottom:8px; }
+    .sig-empty-icon { font-size:14px; font-weight:700; display:block; margin-bottom:8px; }
     .sig-empty p { font-size:13px; margin:0 0 14px; }
     .btn-start-sm {
       padding:7px 16px; border-radius:7px; border:none; cursor:pointer;
@@ -439,7 +434,7 @@ interface WalletData { balances: WalletBalance[]; isPaper: boolean; updatedAt: n
 
     /* Positions */
     .pos-empty { text-align:center; padding:24px 0; color:var(--text-muted); }
-    .pos-empty-icon { font-size:32px; display:block; margin-bottom:8px; }
+    .pos-empty-icon { font-size:12px; font-weight:700; display:block; margin-bottom:8px; }
     .pos-empty p { font-size:13px; margin:0; }
     .pos-list { display:flex; flex-direction:column; gap:8px; }
     .pos-row {
@@ -494,9 +489,10 @@ export class DashboardComponent implements OnInit {
   walletLoading  = signal(false);
   walletError    = signal<string | null>(null);
   walletUpdatedAt = signal<number>(0);
-  walletIsPaper  = signal(false);
   today = new Date();
   readonly Math = Math;
+
+  readonly walletIsPaper = computed(() => this.config.config().riskParams.paperTrading);
 
   readonly walletUSDT = computed(() => {
     const usdt = this.walletBalances().find(b => b.asset === 'USDT' || b.asset === 'BUSD');
@@ -517,7 +513,7 @@ export class DashboardComponent implements OnInit {
     readonly bot: BotSchedulerService,
     readonly tradeStore: TradeStoreService,
     readonly config: ConfigService,
-    private http: HttpClient,
+    private api: ApiService,
   ) {}
 
   async ngOnInit(): Promise<void> {
@@ -529,17 +525,16 @@ export class DashboardComponent implements OnInit {
     this.walletLoading.set(true);
     this.walletError.set(null);
     try {
-      const url = 'https://raw.githubusercontent.com/ishivamsoni150299/binance-trade/main/wallet.json';
-      const data = await firstValueFrom(this.http.get<WalletData>(url));
-      if (!data.balances?.length) {
-        this.walletError.set('Run the bot in GitHub Actions to populate wallet.');
-      } else {
-        this.walletBalances.set(data.balances);
-        this.walletUpdatedAt.set(data.updatedAt);
-        this.walletIsPaper.set(data.isPaper ?? false);
+      if (this.walletIsPaper()) {
+        this.walletBalances.set([{ asset: 'USDT', free: 10000, locked: 0, total: 10000 }]);
+        this.walletUpdatedAt.set(Date.now());
+        return;
       }
+      const data = await this.api.getWalletBalances();
+      this.walletBalances.set(data.balances ?? []);
+      this.walletUpdatedAt.set(data.updatedAt ?? data.timestamp ?? Date.now());
     } catch {
-      this.walletError.set('Could not load wallet snapshot.');
+      this.walletError.set('Could not load wallet balances. Check server env keys.');
     } finally {
       this.walletLoading.set(false);
     }

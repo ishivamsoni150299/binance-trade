@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+﻿import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getKlines, getAvailableBalance, placeOrder, getOpenOrders } from '../_lib/binance-client';
 import { compositeStrategy } from '../_lib/composite-strategy';
 import { checkRisk } from '../_lib/risk-manager';
@@ -10,7 +10,7 @@ import { emaScore } from '../_lib/indicators/ema';
 const BOT_SECRET = process.env['BOT_SECRET'] ?? '';
 
 function verifySecret(req: VercelRequest): boolean {
-  if (!BOT_SECRET) return true; // No secret set — allow all (dev mode)
+  if (!BOT_SECRET) return true; // No secret set - allow all (dev mode)
   return req.headers['x-bot-secret'] === BOT_SECRET ||
     req.headers['authorization'] === `Bearer ${BOT_SECRET}`;
 }

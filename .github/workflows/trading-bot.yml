@@ -1,8 +1,8 @@
-name: Trading Bot (Always-On)
+﻿name: Trading Bot (Always-On)
 
 on:
   schedule:
-    # Every 5 minutes — free on GitHub Actions
+    # Every 5 minutes - free on GitHub Actions
     - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:

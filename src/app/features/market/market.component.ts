@@ -1,5 +1,7 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+﻿import { Component, OnInit, signal, computed } from '@angular/core';
+import { Router } from '@angular/router';
 import { ConfigService } from '../../core/services/config.service';
+import { ApiService } from '../../core/services/api.service';
 
 interface CoinTicker {
   symbol: string;
@@ -17,13 +19,6 @@ type Interval = '1h' | '4h' | '24h';
 
 // Blocklist for leverage/fiat tokens
 const BLOCK = ['UP','DOWN','BULL','BEAR','3L','3S','2L','2S'];
-const TOP_COINS = [
-  'BTC','ETH','BNB','SOL','XRP','ADA','DOGE','DOT','MATIC','LINK',
-  'AVAX','UNI','ATOM','LTC','ETC','BCH','TRX','XLM','ALGO','FIL',
-  'VET','SAND','MANA','AXS','NEAR','FTM','ONE','EGLD','ICP','THETA',
-  'APE','GMT','GALA','ENJ','CHZ','FLOW','ROSE','ZIL','SLP','PEOPLE',
-  'OP','ARB','APT','INJ','SUI','SEI','TIA','PYTH','JUP','WIF',
-];
 
 @Component({
   selector: 'app-market',
@@ -35,12 +30,11 @@ const TOP_COINS = [
       <div class="page-header">
         <div>
           <h1>Market Overview</h1>
-          <p class="subtitle">Top gainers & losers across all USDT pairs</p>
+          <p class="subtitle">Top gainers and losers across all USDT pairs</p>
         </div>
         <div class="header-right">
           @if (lastUpdated()) { <span class="last-update">Updated {{ lastUpdated() }}</span> }
           <button class="refresh-btn" (click)="load()" [disabled]="loading()">
-            <span [class.spin]="loading()">↻</span>
             {{ loading() ? 'Loading...' : 'Refresh' }}
           </button>
         </div>
@@ -54,7 +48,7 @@ const TOP_COINS = [
             {{ iv.label }}
           </button>
         }
-        <div class="iv-hint">Showing top {{ topN }} coins ranked by % change</div>
+        <div class="iv-hint">Showing top {{ topN }} coins ranked by percent change</div>
       </div>
 
       @if (loading() && tickers().length === 0) {
@@ -65,14 +59,14 @@ const TOP_COINS = [
           }
         </div>
       } @else if (error()) {
-        <div class="error-box">⚠ {{ error() }}</div>
+        <div class="error-box">{{ error() }}</div>
       } @else {
         <div class="market-layout">
 
           <!-- Gainers -->
           <div class="market-col">
             <div class="col-header gainers-header">
-              <span class="ch-icon">🚀</span>
+              <span class="ch-icon">G</span>
               <span class="ch-title">Top Gainers</span>
               <span class="ch-count">{{ gainers().length }}</span>
             </div>
@@ -105,7 +99,7 @@ const TOP_COINS = [
           <!-- Losers -->
           <div class="market-col">
             <div class="col-header losers-header">
-              <span class="ch-icon">📉</span>
+              <span class="ch-icon">L</span>
               <span class="ch-title">Top Losers</span>
               <span class="ch-count">{{ losers().length }}</span>
             </div>
@@ -158,18 +152,18 @@ const TOP_COINS = [
             <div class="ms-item">
               <span class="ms-label">Market Mood</span>
               <span class="ms-val" [class.positive]="gainerCount() > loserCount()" [class.negative]="gainerCount() < loserCount()">
-                {{ gainerCount() > loserCount() ? '🟢 Bullish' : gainerCount() < loserCount() ? '🔴 Bearish' : '⚪ Neutral' }}
+                {{ gainerCount() > loserCount() ? 'Bullish' : gainerCount() < loserCount() ? 'Bearish' : 'Neutral' }}
               </span>
             </div>
             <div class="ms-divider"></div>
             <div class="ms-item">
               <span class="ms-label">Best Performer</span>
-              <span class="ms-val positive">{{ gainers()[0]?.name ?? '—' }} {{ gainers()[0] ? '+' + gainers()[0].changePct.toFixed(2) + '%' : '' }}</span>
+              <span class="ms-val positive">{{ gainers()[0]?.name ?? '-' }} {{ gainers()[0] ? '+' + gainers()[0].changePct.toFixed(2) + '%' : '' }}</span>
             </div>
             <div class="ms-divider"></div>
             <div class="ms-item">
               <span class="ms-label">Worst Performer</span>
-              <span class="ms-val negative">{{ losers()[0]?.name ?? '—' }} {{ losers()[0] ? losers()[0].changePct.toFixed(2) + '%' : '' }}</span>
+              <span class="ms-val negative">{{ losers()[0]?.name ?? '-' }} {{ losers()[0] ? losers()[0].changePct.toFixed(2) + '%' : '' }}</span>
             </div>
           </div>
         }
@@ -190,8 +184,6 @@ const TOP_COINS = [
     }
     .refresh-btn:hover { color:var(--text-primary); background:var(--bg-hover); }
     .refresh-btn:disabled { opacity:0.5; cursor:not-allowed; }
-    .spin { display:inline-block; animation:spin 1s linear infinite; }
-    @keyframes spin { to { transform:rotate(360deg); } }
 
     /* Interval bar */
     .interval-bar {
@@ -218,7 +210,7 @@ const TOP_COINS = [
     }
     .gainers-header { background:rgba(38,166,154,0.06); }
     .losers-header { background:rgba(239,83,80,0.06); }
-    .ch-icon { font-size:16px; }
+    .ch-icon { font-size:12px; font-weight:700; color:var(--text-muted); }
     .ch-title { font-size:13px; font-weight:700; flex:1; }
     .ch-count {
       font-size:11px; font-weight:700; padding:2px 7px; border-radius:10px;
@@ -312,7 +304,11 @@ export class MarketComponent implements OnInit {
   readonly gainerCount = computed(() => this.tickers().filter(t => t.changePct > 0).length);
   readonly loserCount  = computed(() => this.tickers().filter(t => t.changePct < 0).length);
 
-  constructor(private config: ConfigService) {}
+  constructor(
+    private config: ConfigService,
+    private api: ApiService,
+    private router: Router,
+  ) {}
 
   ngOnInit(): void { this.load(); }
 
@@ -326,16 +322,7 @@ export class MarketComponent implements OnInit {
     this.error.set(null);
     try {
       const iv = this.interval();
-      let url: string;
-      if (iv === '24h') {
-        url = 'https://api.binance.com/api/v3/ticker/24hr?type=MINI';
-      } else {
-        url = `https://api.binance.com/api/v3/ticker?windowSize=${iv}&type=MINI`;
-      }
-
-      const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-      const raw = await res.json();
-
+      const raw = await this.api.getMiniTickers(iv);
       if (!Array.isArray(raw)) throw new Error('Bad response from Binance');
 
       const coins: CoinTicker[] = (raw as any[])
@@ -359,7 +346,7 @@ export class MarketComponent implements OnInit {
             changePct,
           };
         })
-        .filter(t => t.quoteVolume > 100000); // filter out tiny coins
+        .filter(t => t.quoteVolume > 100000);
 
       this.tickers.set(coins);
       const now = new Date();
@@ -373,7 +360,7 @@ export class MarketComponent implements OnInit {
 
   selectPair(symbol: string): void {
     this.config.update({ pair: symbol });
-    window.location.href = '/chart';
+    this.router.navigateByUrl('/chart');
   }
 
   formatPrice(p: number): string {

@@ -25,7 +25,20 @@ export class BotSchedulerService implements OnDestroy {
   constructor(
     private config: ConfigService,
     private tradeStore: TradeStoreService,
-  ) {}
+  ) {
+    effect(() => {
+      const cfg = this.config.config();
+      const intervalMs = Math.max(5, cfg.botIntervalSec || 30) * 1000;
+      if (this.status() !== 'running' || !this.worker) return;
+      this.worker.postMessage({
+        type: 'UPDATE_CONFIG',
+        payload: {
+          config: this.buildConfigPayload(),
+          intervalMs,
+        },
+      });
+    });
+  }
 
   start(): void {
     if (this.status() === 'running') return;
@@ -44,15 +57,12 @@ export class BotSchedulerService implements OnDestroy {
     };
 
     const cfg = this.config.config();
+    const intervalMs = Math.max(5, cfg.botIntervalSec || 30) * 1000;
     this.worker.postMessage({
       type: 'START',
       payload: {
-        config: {
-          ...cfg,
-          openPositions: this.tradeStore.openTrades().length,
-          dailyPnlPct: 0, // TODO: compute from store
-        },
-        intervalMs: 30000, // Every 30 seconds
+        config: this.buildConfigPayload(),
+        intervalMs,
       },
     });
 
@@ -82,5 +92,14 @@ export class BotSchedulerService implements OnDestroy {
 
   ngOnDestroy(): void {
     this.stop();
+  }
+
+  private buildConfigPayload() {
+    const cfg = this.config.config();
+    return {
+      ...cfg,
+      openPositions: this.tradeStore.openTrades().length,
+      dailyPnlPct: 0,
+    };
   }
 }

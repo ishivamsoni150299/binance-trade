@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+﻿import { Component } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { TitleCasePipe } from '@angular/common';
 import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
@@ -16,7 +16,7 @@ interface NavItem { path: string; label: string; icon: string; }
       <!-- Logo -->
       <div class="logo">
         <div class="logo-icon-wrap">
-          <span class="logo-icon">◆</span>
+          <span class="logo-icon">BT</span>
         </div>
         <div>
           <div class="logo-text">BTrader</div>
@@ -44,7 +44,7 @@ interface NavItem { path: string; label: string; icon: string; }
             \${{ t.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) }}
           </div>
           <div class="lp-change" [class.positive]="t.priceChangePct >= 0" [class.negative]="t.priceChangePct < 0">
-            {{ t.priceChangePct >= 0 ? '▲' : '▼' }} {{ t.priceChangePct.toFixed(2) }}%
+            {{ t.priceChangePct >= 0 ? 'UP' : 'DOWN' }} {{ t.priceChangePct.toFixed(2) }}%
           </div>
         </div>
       }
@@ -86,7 +86,7 @@ interface NavItem { path: string; label: string; icon: string; }
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0;
     }
-    .logo-icon { font-size: 16px; color: white; }
+    .logo-icon { font-size: 12px; color: white; font-weight: 700; letter-spacing: 0.06em; }
     .logo-text { font-size: 16px; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
     .logo-sub { font-size: 10px; color: var(--text-muted); letter-spacing: 0.05em; }
     .nav-list { list-style: none; padding: 10px 8px 0; margin: 0; flex: 1; }
@@ -109,7 +109,7 @@ interface NavItem { path: string; label: string; icon: string; }
       background: rgba(59, 130, 246, 0.1);
       font-weight: 600;
     }
-    .nav-icon { font-size: 15px; width: 20px; text-align: center; }
+    .nav-icon { font-size: 12px; width: 20px; text-align: center; font-weight: 700; color: var(--text-muted); }
     .live-price-box {
       margin: 8px;
       background: var(--bg-card);
@@ -153,13 +153,13 @@ interface NavItem { path: string; label: string; icon: string; }
 })
 export class SidebarComponent {
   navItems: NavItem[] = [
-    { path: '/dashboard', label: 'Dashboard',     icon: '▦'  },
-    { path: '/chart',     label: 'Live Chart',    icon: '📈' },
-    { path: '/market',    label: 'Gainers/Losers',icon: '🏆' },
-    { path: '/bot',       label: 'Bot Config',    icon: '⚡' },
-    { path: '/trades',    label: 'Trade History', icon: '📋' },
-    { path: '/guide',     label: 'How It Works',  icon: '📖' },
-    { path: '/settings',  label: 'Settings',      icon: '⚙' },
+    { path: '/dashboard', label: 'Dashboard',     icon: 'D' },
+    { path: '/chart',     label: 'Live Chart',    icon: 'C' },
+    { path: '/market',    label: 'Gainers/Losers',icon: 'M' },
+    { path: '/bot',       label: 'Bot Config',    icon: 'B' },
+    { path: '/trades',    label: 'Trade History', icon: 'T' },
+    { path: '/guide',     label: 'How It Works',  icon: 'G' },
+    { path: '/settings',  label: 'Settings',      icon: 'S' },
   ];
 
   constructor(

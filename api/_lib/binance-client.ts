@@ -1,4 +1,4 @@
-import * as crypto from 'node:crypto';
+﻿import * as crypto from 'node:crypto';
 
 const BASE_URL = process.env['BINANCE_TESTNET'] === 'true'
   ? 'https://testnet.binance.vision/api'
@@ -42,7 +42,7 @@ async function request(method: string, path: string, params: Record<string, any>
   return res.json();
 }
 
-// Public klines don't need API key — try all Binance hosts for reliability
+// Public klines do not need API key - try all Binance hosts for reliability
 const PUBLIC_HOSTS = [
   'https://api.binance.com',
   'https://api1.binance.com',
