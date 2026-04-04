@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ConfigService } from '../../core/services/config.service';
 import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
@@ -11,11 +11,18 @@ import { StrategyType, Timeframe } from '../../core/models/types';
   template: `
     <div class="page">
       <div class="page-header">
-        <h1>Bot Configuration</h1>
-        <div class="bot-toggle">
-          <span class="status-label" [class]="'s-' + bot.status()">{{ bot.status() }}</span>
-          <button class="toggle-btn" [class.running]="bot.status() === 'running'" (click)="toggleBot()">
-            {{ bot.status() === 'running' ? '⏹ Stop' : '▶ Start' }}
+        <div>
+          <h1>Bot Configuration</h1>
+          <div class="subtitle">Settings are saved automatically</div>
+        </div>
+        <div class="bot-controls">
+          <div class="bot-status-chip" [class]="'chip-' + bot.status()">
+            <span class="chip-dot"></span>
+            {{ bot.status() | titlecase }}
+            @if (bot.cycleCount() > 0) { · {{ bot.cycleCount() }} cycles }
+          </div>
+          <button class="toggle-btn" [class.btn-stop]="bot.status() === 'running'" (click)="toggleBot()">
+            {{ bot.status() === 'running' ? '⏹ Stop Bot' : '▶ Start Bot' }}
           </button>
         </div>
       </div>
@@ -24,195 +31,356 @@ import { StrategyType, Timeframe } from '../../core/models/types';
         <div class="error-banner">⚠ {{ bot.lastError() }}</div>
       }
 
-      <div class="config-grid">
-        <!-- Trading pair & timeframe -->
-        <div class="config-section">
-          <h2>Market</h2>
-          <div class="form-row">
-            <label>Trading Pair</label>
-            <select [ngModel]="cfg().pair" (ngModelChange)="onPairChange($event)">
-              @for (pair of pairs; track pair) {
-                <option [value]="pair">{{ pair }}</option>
-              }
-            </select>
-          </div>
-          <div class="form-row">
-            <label>Timeframe</label>
-            <div class="btn-group">
-              @for (tf of timeframes; track tf) {
-                <button [class.active]="cfg().timeframe === tf" (click)="onTimeframeChange(tf)">{{ tf }}</button>
-              }
+      <div class="config-layout">
+
+        <!-- LEFT: Market + Strategy selector -->
+        <div class="config-col">
+
+          <!-- Market -->
+          <div class="card">
+            <div class="card-title">Market</div>
+            <div class="form-row">
+              <label>Trading Pair</label>
+              <select [ngModel]="cfg().pair" (ngModelChange)="config.update({pair: $event})">
+                @for (pair of pairs; track pair) {
+                  <option [value]="pair">{{ pair }}</option>
+                }
+              </select>
+            </div>
+            <div class="form-row">
+              <label>Timeframe</label>
+              <div class="btn-group">
+                @for (tf of timeframes; track tf) {
+                  <button [class.active]="cfg().timeframe === tf" (click)="config.update({timeframe: tf})">{{ tf }}</button>
+                }
+              </div>
             </div>
           </div>
-          <div class="form-row">
-            <label>Strategy</label>
-            <div class="btn-group">
+
+          <!-- Strategy selector -->
+          <div class="card">
+            <div class="card-title">Strategy</div>
+            <div class="strategy-cards">
               @for (s of strategies; track s) {
-                <button [class.active]="cfg().strategy === s" (click)="onStrategyChange(s)" [title]="strategyDesc[s]">{{ s }}</button>
+                <div class="strategy-card" [class.selected]="cfg().strategy === s" (click)="config.update({strategy: s})">
+                  <div class="sc-icon">{{ strategyIcon[s] }}</div>
+                  <div class="sc-name">{{ s }}</div>
+                  <div class="sc-desc">{{ strategyDesc[s] }}</div>
+                  @if (cfg().strategy === s) {
+                    <div class="sc-check">✓</div>
+                  }
+                </div>
               }
             </div>
           </div>
+
+          <!-- Trading mode -->
+          <div class="card">
+            <div class="card-title">Trading Mode</div>
+            <div class="mode-toggle">
+              <button [class.active]="cfg().riskParams.paperTrading" (click)="config.updateRisk({paperTrading: true})">
+                <span class="mode-icon">📝</span>
+                <div>
+                  <div class="mode-name">Paper</div>
+                  <div class="mode-sub">Simulated trades</div>
+                </div>
+              </button>
+              <button [class.active]="!cfg().riskParams.paperTrading" [class.live-active]="!cfg().riskParams.paperTrading" (click)="setLive()">
+                <span class="mode-icon">⚡</span>
+                <div>
+                  <div class="mode-name">Live</div>
+                  <div class="mode-sub">Real orders</div>
+                </div>
+              </button>
+            </div>
+            @if (!cfg().riskParams.paperTrading) {
+              <div class="live-warning">⚠ Live mode: real money at risk. Ensure API keys are set in Vercel.</div>
+            }
+          </div>
+
         </div>
 
-        <!-- Strategy params -->
-        <div class="config-section">
-          <h2>Strategy Parameters</h2>
-          <div class="form-row">
-            <label>RSI Period <span class="value">{{ cfg().strategyParams.rsiPeriod }}</span></label>
-            <input type="range" min="5" max="30" step="1" [ngModel]="cfg().strategyParams.rsiPeriod"
-              (ngModelChange)="config.updateStrategy({rsiPeriod: +$event})">
-          </div>
-          <div class="form-row">
-            <label>RSI Oversold <span class="value">{{ cfg().strategyParams.rsiOversold }}</span></label>
-            <input type="range" min="10" max="40" step="1" [ngModel]="cfg().strategyParams.rsiOversold"
-              (ngModelChange)="config.updateStrategy({rsiOversold: +$event})">
-          </div>
-          <div class="form-row">
-            <label>RSI Overbought <span class="value">{{ cfg().strategyParams.rsiOverbought }}</span></label>
-            <input type="range" min="60" max="90" step="1" [ngModel]="cfg().strategyParams.rsiOverbought"
-              (ngModelChange)="config.updateStrategy({rsiOverbought: +$event})">
-          </div>
-          <div class="form-row">
-            <label>EMA Fast <span class="value">{{ cfg().strategyParams.emaFast }}</span></label>
-            <input type="range" min="5" max="20" step="1" [ngModel]="cfg().strategyParams.emaFast"
-              (ngModelChange)="config.updateStrategy({emaFast: +$event})">
-          </div>
-          <div class="form-row">
-            <label>EMA Slow <span class="value">{{ cfg().strategyParams.emaSlow }}</span></label>
-            <input type="range" min="15" max="50" step="1" [ngModel]="cfg().strategyParams.emaSlow"
-              (ngModelChange)="config.updateStrategy({emaSlow: +$event})">
-          </div>
-          <div class="form-row">
-            <label>BB Period <span class="value">{{ cfg().strategyParams.bbPeriod }}</span></label>
-            <input type="range" min="10" max="50" step="1" [ngModel]="cfg().strategyParams.bbPeriod"
-              (ngModelChange)="config.updateStrategy({bbPeriod: +$event})">
-          </div>
-        </div>
+        <!-- RIGHT: Parameters -->
+        <div class="config-col">
 
-        <!-- Risk management -->
-        <div class="config-section">
-          <h2>Risk Management</h2>
-          <div class="form-row">
-            <label>Position Size <span class="value">{{ cfg().riskParams.positionSizePct }}%</span></label>
-            <input type="range" min="1" max="20" step="0.5" [ngModel]="cfg().riskParams.positionSizePct"
-              (ngModelChange)="config.updateRisk({positionSizePct: +$event})">
-          </div>
-          <div class="form-row">
-            <label>Stop Loss <span class="value">{{ cfg().riskParams.stopLossPct }}%</span></label>
-            <input type="range" min="0.5" max="10" step="0.5" [ngModel]="cfg().riskParams.stopLossPct"
-              (ngModelChange)="config.updateRisk({stopLossPct: +$event})">
-          </div>
-          <div class="form-row">
-            <label>Take Profit <span class="value">{{ cfg().riskParams.takeProfitPct }}%</span></label>
-            <input type="range" min="1" max="20" step="0.5" [ngModel]="cfg().riskParams.takeProfitPct"
-              (ngModelChange)="config.updateRisk({takeProfitPct: +$event})">
-          </div>
-          <div class="form-row">
-            <label>Max Daily Loss <span class="value">{{ cfg().riskParams.maxDailyLossPct }}%</span></label>
-            <input type="range" min="1" max="20" step="1" [ngModel]="cfg().riskParams.maxDailyLossPct"
-              (ngModelChange)="config.updateRisk({maxDailyLossPct: +$event})">
-          </div>
-          <div class="risk-summary">
-            <div class="risk-row">
-              <span>Risk/Reward Ratio</span>
-              <span class="risk-value">1 : {{ (cfg().riskParams.takeProfitPct / cfg().riskParams.stopLossPct).toFixed(1) }}</span>
+          <!-- Strategy params -->
+          <div class="card">
+            <div class="card-title">Strategy Parameters</div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>RSI Period</span>
+                <span class="slider-val">{{ cfg().strategyParams.rsiPeriod }}</span>
+              </div>
+              <input type="range" min="5" max="30" step="1" class="slider"
+                [ngModel]="cfg().strategyParams.rsiPeriod"
+                (ngModelChange)="config.updateStrategy({rsiPeriod: +$event})">
+              <div class="slider-bounds"><span>5</span><span>30</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>RSI Oversold</span>
+                <span class="slider-val green">{{ cfg().strategyParams.rsiOversold }}</span>
+              </div>
+              <input type="range" min="10" max="40" step="1" class="slider green-slider"
+                [ngModel]="cfg().strategyParams.rsiOversold"
+                (ngModelChange)="config.updateStrategy({rsiOversold: +$event})">
+              <div class="slider-bounds"><span>10</span><span>40</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>RSI Overbought</span>
+                <span class="slider-val red">{{ cfg().strategyParams.rsiOverbought }}</span>
+              </div>
+              <input type="range" min="60" max="90" step="1" class="slider red-slider"
+                [ngModel]="cfg().strategyParams.rsiOverbought"
+                (ngModelChange)="config.updateStrategy({rsiOverbought: +$event})">
+              <div class="slider-bounds"><span>60</span><span>90</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>EMA Fast</span>
+                <span class="slider-val">{{ cfg().strategyParams.emaFast }}</span>
+              </div>
+              <input type="range" min="5" max="20" step="1" class="slider"
+                [ngModel]="cfg().strategyParams.emaFast"
+                (ngModelChange)="config.updateStrategy({emaFast: +$event})">
+              <div class="slider-bounds"><span>5</span><span>20</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>EMA Slow</span>
+                <span class="slider-val">{{ cfg().strategyParams.emaSlow }}</span>
+              </div>
+              <input type="range" min="15" max="50" step="1" class="slider"
+                [ngModel]="cfg().strategyParams.emaSlow"
+                (ngModelChange)="config.updateStrategy({emaSlow: +$event})">
+              <div class="slider-bounds"><span>15</span><span>50</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Bollinger Period</span>
+                <span class="slider-val">{{ cfg().strategyParams.bbPeriod }}</span>
+              </div>
+              <input type="range" min="10" max="50" step="1" class="slider"
+                [ngModel]="cfg().strategyParams.bbPeriod"
+                (ngModelChange)="config.updateStrategy({bbPeriod: +$event})">
+              <div class="slider-bounds"><span>10</span><span>50</span></div>
             </div>
           </div>
-        </div>
 
-        <!-- Paper / Live toggle -->
-        <div class="config-section mode-section">
-          <h2>Trading Mode</h2>
-          <div class="mode-toggle">
-            <button [class.active]="cfg().riskParams.paperTrading" (click)="config.updateRisk({paperTrading: true})">
-              📝 Paper Trading
-            </button>
-            <button [class.active]="!cfg().riskParams.paperTrading" (click)="setLive()" class="live-btn">
-              ⚡ Live Trading
-            </button>
+          <!-- Risk management -->
+          <div class="card">
+            <div class="card-title">Risk Management</div>
+
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Position Size</span>
+                <span class="slider-val">{{ cfg().riskParams.positionSizePct }}%</span>
+              </div>
+              <input type="range" min="1" max="20" step="0.5" class="slider"
+                [ngModel]="cfg().riskParams.positionSizePct"
+                (ngModelChange)="config.updateRisk({positionSizePct: +$event})">
+              <div class="slider-bounds"><span>1%</span><span>20%</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Stop Loss</span>
+                <span class="slider-val red">{{ cfg().riskParams.stopLossPct }}%</span>
+              </div>
+              <input type="range" min="0.5" max="10" step="0.5" class="slider red-slider"
+                [ngModel]="cfg().riskParams.stopLossPct"
+                (ngModelChange)="config.updateRisk({stopLossPct: +$event})">
+              <div class="slider-bounds"><span>0.5%</span><span>10%</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Take Profit</span>
+                <span class="slider-val green">{{ cfg().riskParams.takeProfitPct }}%</span>
+              </div>
+              <input type="range" min="1" max="20" step="0.5" class="slider green-slider"
+                [ngModel]="cfg().riskParams.takeProfitPct"
+                (ngModelChange)="config.updateRisk({takeProfitPct: +$event})">
+              <div class="slider-bounds"><span>1%</span><span>20%</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Max Daily Loss</span>
+                <span class="slider-val red">{{ cfg().riskParams.maxDailyLossPct }}%</span>
+              </div>
+              <input type="range" min="1" max="20" step="1" class="slider red-slider"
+                [ngModel]="cfg().riskParams.maxDailyLossPct"
+                (ngModelChange)="config.updateRisk({maxDailyLossPct: +$event})">
+              <div class="slider-bounds"><span>1%</span><span>20%</span></div>
+            </div>
+
+            <!-- Risk/Reward summary -->
+            <div class="rr-summary">
+              <div class="rr-item">
+                <span class="rr-label">Risk / Reward</span>
+                <span class="rr-value" [class.rr-good]="rrRatio() >= 2" [class.rr-bad]="rrRatio() < 1.5">
+                  1 : {{ rrRatio().toFixed(1) }}
+                </span>
+              </div>
+              <div class="rr-item">
+                <span class="rr-label">Break-even Win Rate</span>
+                <span class="rr-value">{{ breakEvenWinRate().toFixed(0) }}%</span>
+              </div>
+            </div>
           </div>
-          <p class="mode-hint">
-            {{ cfg().riskParams.paperTrading
-              ? 'Paper mode: trades are simulated, no real orders placed.'
-              : '⚠ Live mode: REAL money will be used. Ensure your Binance API key is set in Vercel.' }}
-          </p>
+
         </div>
       </div>
 
-      <div class="config-actions">
-        <button class="btn btn-danger" (click)="resetConfig()">Reset to Defaults</button>
-        <span class="save-hint">✓ Settings saved automatically</span>
+      <div class="config-footer">
+        <button class="btn-reset" (click)="resetConfig()">↺ Reset to Defaults</button>
+        <span class="save-hint">✓ All settings saved automatically to localStorage</span>
       </div>
     </div>
   `,
   styles: [`
-    .page { padding: 24px; max-width: 1000px; }
-    .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-    h1 { font-size: 22px; font-weight: 700; margin: 0; }
-    .bot-toggle { display: flex; align-items: center; gap: 12px; }
-    .status-label { font-size: 12px; text-transform: uppercase; font-weight: 600; }
-    .s-running { color: var(--green); }
-    .s-stopped { color: var(--text-muted); }
-    .s-error { color: var(--red); }
+    .page { padding: 24px; max-width: 1100px; animation: fadeIn 0.25s ease-out; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+    h1 { font-size: 22px; font-weight: 700; margin: 0 0 2px; }
+    .subtitle { font-size: 12px; color: var(--text-muted); }
+    .bot-controls { display: flex; align-items: center; gap: 10px; }
+    .bot-status-chip {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary);
+    }
+    .chip-running { color: var(--green); border-color: rgba(38,166,154,0.3); background: rgba(38,166,154,0.08); }
+    .chip-error { color: var(--red); border-color: rgba(239,83,80,0.3); }
+    .chip-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+    }
+    .chip-running .chip-dot { animation: pulse-green 2s infinite; }
     .toggle-btn {
-      padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer;
-      background: var(--blue); color: white; font-weight: 600; font-size: 13px;
+      padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer;
+      background: var(--blue); color: white; font-weight: 600; font-size: 13px; transition: background 0.15s;
     }
-    .toggle-btn.running { background: var(--red); }
+    .toggle-btn:hover { background: #2563eb; }
+    .btn-stop { background: var(--red); }
+    .btn-stop:hover { background: #dc2626; }
     .error-banner {
-      background: rgba(239,83,80,0.1); border: 1px solid var(--red);
-      border-radius: 6px; padding: 10px 16px; color: var(--red); margin-bottom: 16px;
+      background: rgba(239,83,80,0.1); border: 1px solid rgba(239,83,80,0.3);
+      border-radius: 8px; padding: 10px 16px; color: var(--red); margin-bottom: 16px; font-size: 13px;
     }
-    .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .config-section {
+    .config-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .config-col { display: flex; flex-direction: column; gap: 14px; }
+    .card {
       background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: 10px; padding: 20px;
+      border-radius: 12px; padding: 18px;
     }
-    .config-section h2 { font-size: 14px; font-weight: 600; margin: 0 0 16px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+    .card-title {
+      font-size: 11px; font-weight: 700; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 14px;
+    }
     .form-row { margin-bottom: 14px; }
-    .form-row label { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
-    .value { color: var(--text-primary); font-weight: 600; }
-    input[type=range] { width: 100%; accent-color: var(--blue); }
+    .form-row:last-child { margin-bottom: 0; }
+    .form-row label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 500; }
     select {
       width: 100%; background: var(--bg-hover); border: 1px solid var(--border);
-      border-radius: 6px; padding: 8px 10px; color: var(--text-primary); font-size: 13px;
+      border-radius: 8px; padding: 8px 12px; color: var(--text-primary); font-size: 13px;
     }
     .btn-group { display: flex; gap: 4px; flex-wrap: wrap; }
     .btn-group button {
       padding: 5px 10px; background: var(--bg-hover); border: 1px solid var(--border);
-      border-radius: 4px; color: var(--text-secondary); cursor: pointer; font-size: 12px;
+      border-radius: 6px; color: var(--text-secondary); cursor: pointer; font-size: 12px; font-weight: 500;
+      transition: all 0.15s;
     }
     .btn-group button.active { background: var(--blue); color: white; border-color: var(--blue); }
-    .risk-summary { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
-    .risk-row { display: flex; justify-content: space-between; font-size: 13px; }
-    .risk-value { font-weight: 600; color: var(--green); }
-    .mode-section { grid-column: span 2; }
-    .mode-toggle { display: flex; gap: 12px; margin-bottom: 12px; }
-    .mode-toggle button {
-      flex: 1; padding: 12px; border: 2px solid var(--border); border-radius: 8px;
-      background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; font-size: 13px; font-weight: 600;
+    .btn-group button:hover:not(.active) { background: var(--bg-primary); color: var(--text-primary); }
+
+    /* Strategy cards */
+    .strategy-cards { display: flex; flex-direction: column; gap: 8px; }
+    .strategy-card {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-hover); cursor: pointer; transition: all 0.15s; position: relative;
     }
-    .mode-toggle button.active { border-color: var(--blue); color: var(--blue); background: rgba(59,130,246,0.08); }
-    .live-btn.active { border-color: var(--red); color: var(--red); background: rgba(239,83,80,0.08); }
-    .mode-hint { font-size: 12px; color: var(--text-muted); margin: 0; }
-    .config-actions { display: flex; align-items: center; gap: 16px; margin-top: 20px; }
-    .btn { padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
-    .btn-danger { background: rgba(239,83,80,0.1); color: var(--red); border: 1px solid var(--red); }
-    .save-hint { color: var(--green); font-size: 12px; }
-    @media (max-width: 768px) { .config-grid { grid-template-columns: 1fr; } .mode-section { grid-column: auto; } }
+    .strategy-card:hover { border-color: var(--border-light); background: var(--bg-primary); }
+    .strategy-card.selected { border-color: var(--blue); background: rgba(59,130,246,0.08); }
+    .sc-icon { font-size: 18px; width: 24px; text-align: center; }
+    .sc-name { font-size: 12px; font-weight: 700; color: var(--text-primary); width: 80px; }
+    .sc-desc { font-size: 11px; color: var(--text-muted); flex: 1; }
+    .sc-check { font-size: 12px; color: var(--blue); font-weight: 700; }
+
+    /* Mode toggle */
+    .mode-toggle { display: flex; gap: 10px; margin-bottom: 10px; }
+    .mode-toggle button {
+      flex: 1; display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; border: 2px solid var(--border); border-radius: 10px;
+      background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; transition: all 0.15s;
+    }
+    .mode-toggle button:hover { border-color: var(--border-light); background: var(--bg-primary); }
+    .mode-toggle button.active { border-color: var(--blue); background: rgba(59,130,246,0.08); color: var(--blue); }
+    .mode-toggle button.live-active { border-color: var(--red); background: rgba(239,83,80,0.08); color: var(--red); }
+    .mode-icon { font-size: 20px; }
+    .mode-name { font-size: 13px; font-weight: 700; line-height: 1.2; text-align: left; }
+    .mode-sub { font-size: 10px; color: inherit; opacity: 0.7; }
+    .live-warning { font-size: 12px; color: var(--red); background: rgba(239,83,80,0.08); border-radius: 6px; padding: 8px 10px; }
+
+    /* Sliders */
+    .slider-row { margin-bottom: 16px; }
+    .slider-row:last-of-type { margin-bottom: 0; }
+    .slider-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 500; }
+    .slider-val { font-weight: 700; color: var(--text-primary); }
+    .slider-val.green { color: var(--green); }
+    .slider-val.red { color: var(--red); }
+    .slider { width: 100%; accent-color: var(--blue); height: 4px; }
+    .green-slider { accent-color: var(--green); }
+    .red-slider { accent-color: var(--red); }
+    .slider-bounds { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+    /* Risk reward summary */
+    .rr-summary {
+      display: flex; gap: 0; margin-top: 16px; padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .rr-item { flex: 1; text-align: center; }
+    .rr-item:first-child { border-right: 1px solid var(--border); }
+    .rr-label { display: block; font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .rr-value { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+    .rr-good { color: var(--green); }
+    .rr-bad { color: var(--yellow); }
+
+    /* Footer */
+    .config-footer { display: flex; align-items: center; gap: 16px; margin-top: 20px; }
+    .btn-reset {
+      padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;
+      background: rgba(239,83,80,0.08); color: var(--red); border: 1px solid rgba(239,83,80,0.3);
+    }
+    .btn-reset:hover { background: rgba(239,83,80,0.15); }
+    .save-hint { font-size: 12px; color: var(--green); }
+
+    @media (max-width: 768px) {
+      .config-layout { grid-template-columns: 1fr; }
+    }
   `]
 })
 export class BotConfigComponent {
   pairs = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'DOTUSDT', 'MATICUSDT', 'LINKUSDT'];
   timeframes: Timeframe[] = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
   strategies: StrategyType[] = ['RSI', 'MACD', 'BOLLINGER', 'EMA', 'COMPOSITE'];
-  strategyDesc: Record<StrategyType, string> = {
-    RSI: 'Buy oversold, sell overbought',
-    MACD: 'Buy/sell on MACD crossover',
-    BOLLINGER: 'Trade at band extremes',
-    EMA: 'Buy/sell on EMA crossover',
-    COMPOSITE: 'Weighted score of all indicators (recommended)',
+
+  strategyIcon: Record<StrategyType, string> = {
+    RSI: '📊', MACD: '📉', BOLLINGER: '🎯', EMA: '📈', COMPOSITE: '⚡',
   };
+  strategyDesc: Record<StrategyType, string> = {
+    RSI: 'Buy oversold / sell overbought zones',
+    MACD: 'Crossover signals with histogram',
+    BOLLINGER: 'Trade at Bollinger Band extremes',
+    EMA: 'Fast / slow exponential MA crossover',
+    COMPOSITE: 'Weighted score of all 4 indicators',
+  };
+
+  readonly rrRatio = computed(() =>
+    this.config.config().riskParams.takeProfitPct / this.config.config().riskParams.stopLossPct
+  );
+
+  readonly breakEvenWinRate = computed(() =>
+    (1 / (1 + this.rrRatio())) * 100
+  );
 
   constructor(
     readonly config: ConfigService,
@@ -226,12 +394,8 @@ export class BotConfigComponent {
     else this.bot.start();
   }
 
-  onPairChange(pair: string): void { this.config.update({ pair }); }
-  onTimeframeChange(tf: string): void { this.config.update({ timeframe: tf as Timeframe }); }
-  onStrategyChange(s: StrategyType): void { this.config.update({ strategy: s }); }
-
   setLive(): void {
-    if (confirm('Switch to LIVE trading? This will place REAL orders on Binance. Make sure your API key is set in Vercel environment variables.')) {
+    if (confirm('Switch to LIVE trading? Real money will be used. Make sure BINANCE_API_KEY is set in Vercel.')) {
       this.config.updateRisk({ paperTrading: false });
     }
   }
