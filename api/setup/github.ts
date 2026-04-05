@@ -1,34 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import * as crypto from 'node:crypto';
 
 const REPO_OWNER = 'ishivamsoni150299';
 const REPO_NAME  = 'binance-trade';
 
-// Encrypt a secret value using the repo's public key (libsodium sealed box via tweetnacl)
 async function encryptSecret(publicKeyB64: string, secretValue: string): Promise<string> {
-  const sodium = await import('tweetnacl');
-  const { encodeUTF8, decodeBase64, encodeBase64 } = await import('tweetnacl-util');
-
-  const recipientPublicKey = decodeBase64(publicKeyB64);
-  const messageBytes = encodeUTF8(secretValue);
-
-  // Generate ephemeral keypair
-  const ephemeralKeypair = sodium.box.keyPair();
-
-  // Compute shared key
-  const sharedKey = sodium.box.before(recipientPublicKey, ephemeralKeypair.secretKey);
-
-  // Encrypt (sealed box = ephemeral pubkey + box)
-  const nonce = sodium.randomBytes(sodium.box.nonceLength);
-  const encrypted = sodium.box.after(messageBytes, nonce, sharedKey);
-
-  // GitHub expects: ephemeralPublicKey(32) + nonce(24) + ciphertext
-  const result = new Uint8Array(32 + 24 + encrypted.length);
-  result.set(ephemeralKeypair.publicKey, 0);
-  result.set(nonce, 32);
-  result.set(encrypted, 56);
-
-  return encodeBase64(result);
+  const _sodium = await import('libsodium-wrappers');
+  await _sodium.ready;
+  const sodium = _sodium;
+  const recipientKey = sodium.from_base64(publicKeyB64, sodium.base64_variants.ORIGINAL);
+  const messageBytes = sodium.from_string(secretValue);
+  const encrypted = sodium.crypto_box_seal(messageBytes, recipientKey);
+  return sodium.to_base64(encrypted, sodium.base64_variants.ORIGINAL);
 }
 
 async function githubApi(token: string, method: string, path: string, body?: any) {
@@ -51,15 +33,14 @@ async function githubApi(token: string, method: string, path: string, body?: any
 }
 
 async function setSecret(token: string, keyId: string, publicKey: string, name: string, value: string) {
-  const encrypted = await encryptSecret(publicKey, value);
+  const encrypted_value = await encryptSecret(publicKey, value);
   await githubApi(token, 'PUT', `/repos/${REPO_OWNER}/${REPO_NAME}/actions/secrets/${name}`, {
-    encrypted_value: encrypted,
+    encrypted_value,
     key_id: keyId,
   });
 }
 
 async function setVariable(token: string, name: string, value: string) {
-  // Try update first, then create
   try {
     await githubApi(token, 'PATCH', `/repos/${REPO_OWNER}/${REPO_NAME}/actions/variables/${name}`, { name, value });
   } catch {
@@ -78,17 +59,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!githubToken) return res.status(400).json({ error: 'githubToken is required' });
 
-  // Use keys from request body, or fall back to Vercel env vars
   const apiKey    = binanceApiKey    || process.env['BINANCE_API_KEY']    || '';
   const apiSecret = binanceApiSecret || process.env['BINANCE_API_SECRET'] || '';
 
   if (!apiKey || !apiSecret) {
-    return res.status(400).json({ error: 'Binance API key and secret are required. Set them here or in Vercel environment variables.' });
+    return res.status(400).json({ error: 'Binance API key and secret are required.' });
   }
 
   try {
-    // 1. Get repo public key for secret encryption
-    const pkData = await githubApi(githubToken, 'GET', `/repos/${REPO_OWNER}/${REPO_NAME}/actions/public-key`);
+    // 1. Get public key — note: correct path is /actions/secrets/public-key
+    const pkData = await githubApi(githubToken, 'GET', `/repos/${REPO_OWNER}/${REPO_NAME}/actions/secrets/public-key`);
     const { key_id, key } = pkData;
 
     // 2. Set secrets
@@ -105,7 +85,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await setVariable(githubToken, 'BOT_PAIR',               'BTCUSDT');
     await setVariable(githubToken, 'BOT_TIMEFRAME',          '1h');
 
-    // 4. Trigger workflow run immediately
+    // 4. Trigger workflow immediately
     try {
       await githubApi(githubToken, 'POST', `/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/trading-bot.yml/dispatches`, {
         ref: 'main',
@@ -114,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       success: true,
-      message: `GitHub configured. Secrets set. Bot triggered. Mode: ${isPaper ? 'PAPER' : 'LIVE'}.`,
+      message: `GitHub configured. Bot triggered. Mode: ${isPaper ? 'PAPER' : 'LIVE'}.`,
       mode: isPaper ? 'paper' : 'live',
     });
 
