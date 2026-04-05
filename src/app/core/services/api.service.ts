@@ -42,30 +42,65 @@ export interface BacktestResult {
   note?: string;
 }
 
+// Binance public API hosts — called directly from the browser (not blocked unlike Vercel/AWS)
+const BINANCE_HOSTS = [
+  'https://api.binance.com',
+  'https://api1.binance.com',
+  'https://api2.binance.com',
+  'https://api3.binance.com',
+];
+
+async function binanceFetch(path: string): Promise<any> {
+  let lastErr: Error | null = null;
+  for (const host of BINANCE_HOSTS) {
+    try {
+      const res = await fetch(`${host}${path}`, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.msg ?? `HTTP ${res.status}`);
+      return data;
+    } catch (e: any) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error('All Binance hosts failed');
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   constructor(private http: HttpClient) {}
 
+  // Public market data — called directly from the browser (bypasses Vercel/AWS block)
   async getKlines(symbol: string, interval: string, limit = 200): Promise<Candle[]> {
-    const params = new HttpParams()
-      .set('symbol', symbol)
-      .set('interval', interval)
-      .set('limit', String(limit));
-    return firstValueFrom(this.http.get<Candle[]>('/api/market/klines', { params }));
+    const raw = await binanceFetch(
+      `/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+    );
+    return (raw as any[]).map((k: any[]) => ({
+      time: Math.floor(Number(k[0]) / 1000),
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      volume: parseFloat(k[5]),
+    }));
   }
 
   async getTickersBySymbols(symbols: string[]): Promise<any[]> {
-    const params = new HttpParams().set('symbols', JSON.stringify(symbols));
-    return firstValueFrom(this.http.get<any[]>('/api/market/tickers', { params }));
+    return binanceFetch(
+      `/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`
+    );
   }
 
   async getMiniTickers(window: '1h' | '4h' | '24h'): Promise<any[]> {
-    const params = new HttpParams()
-      .set('window', window)
-      .set('type', 'MINI');
-    return firstValueFrom(this.http.get<any[]>('/api/market/tickers', { params }));
+    const path = window === '24h'
+      ? `/api/v3/ticker/24hr?type=MINI`
+      : `/api/v3/ticker?windowSize=${window}&type=MINI`;
+    return binanceFetch(path);
   }
 
+  // Signed / bot actions — must go through Vercel proxy (server holds API keys)
   async getWalletBalances(): Promise<WalletResponse> {
     return firstValueFrom(this.http.get<WalletResponse>('/api/wallet/balances'));
   }
