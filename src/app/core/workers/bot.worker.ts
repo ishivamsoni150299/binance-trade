@@ -175,12 +175,12 @@ function emaScore(closes: number[], fast = 9, slow = 21): number {
 
 function computeSignal(strategy: string, closes: number[], params: any) {
   const p = params ?? {};
-  const base = computeScore(strategy, closes, p);
+  const trendPct = calcTrendPct(closes, p.trendEmaFast ?? 20, p.trendEmaSlow ?? 50);
+  const base = computeScore(strategy, closes, p, trendPct);
   const indicators = base.indicators;
   const buyTh = p.buyThreshold ?? 0.5;
   const sellTh = p.sellThreshold ?? -0.5;
   const volatilityPct = calcVolatilityPct(closes, p.volatilityLookback ?? 20);
-  const trendPct = calcTrendPct(closes, p.trendEmaFast ?? 20, p.trendEmaSlow ?? 50);
   const confirmBars = Math.max(1, Math.min(5, p.confirmBars ?? 1));
 
   if (confirmBars <= 1) {
@@ -193,7 +193,8 @@ function computeSignal(strategy: string, closes: number[], params: any) {
   for (let i = confirmBars - 1; i >= 0; i--) {
     const slice = closes.slice(0, closes.length - i);
     if (slice.length < 30) continue;
-    scores.push(computeScore(strategy, slice, p).score);
+    const sliceTrend = calcTrendPct(slice, p.trendEmaFast ?? 20, p.trendEmaSlow ?? 50);
+    scores.push(computeScore(strategy, slice, p, sliceTrend).score);
   }
   const avgScore = scores.length ? (scores.reduce((s, v) => s + v, 0) / scores.length) : base.score;
   const buyHits = scores.filter(s => s >= buyTh).length;
@@ -253,7 +254,7 @@ function computePositionSizePct(risk: any, signalScore: number, volatilityPct: n
   return sizePct;
 }
 
-function computeScore(strategy: string, closes: number[], p: any) {
+function computeScore(strategy: string, closes: number[], p: any, trendPct: number) {
   const rsi = rsiScore(closes, p.rsiPeriod ?? 14, p.rsiOversold ?? 30, p.rsiOverbought ?? 70);
   const macd = macdScore(closes, p.macdFast ?? 12, p.macdSlow ?? 26, p.macdSignal ?? 9);
   const bollinger = bollingerScore(closes, p.bbPeriod ?? 20, p.bbMultiplier ?? 2);
@@ -266,11 +267,21 @@ function computeScore(strategy: string, closes: number[], p: any) {
   else if (strategy === 'BOLLINGER') score = bollinger;
   else if (strategy === 'EMA') score = ema;
   else {
-    score =
-      rsi * (p.rsiWeight ?? 0.25) +
-      macd * (p.macdWeight ?? 0.30) +
-      bollinger * (p.bbWeight ?? 0.25) +
-      ema * (p.emaWeight ?? 0.20);
+    const adaptive = p.adaptiveWeights !== false;
+    if (adaptive) {
+      const thresh = p.trendRegimeThresholdPct ?? 0.3;
+      const trending = Math.abs(trendPct) >= thresh;
+      const weights = trending
+        ? { rsi: 0.15, macd: 0.35, bb: 0.15, ema: 0.35 }
+        : { rsi: 0.35, macd: 0.15, bb: 0.35, ema: 0.15 };
+      score = rsi * weights.rsi + macd * weights.macd + bollinger * weights.bb + ema * weights.ema;
+    } else {
+      score =
+        rsi * (p.rsiWeight ?? 0.25) +
+        macd * (p.macdWeight ?? 0.30) +
+        bollinger * (p.bbWeight ?? 0.25) +
+        ema * (p.emaWeight ?? 0.20);
+    }
   }
   return { score, indicators };
 }

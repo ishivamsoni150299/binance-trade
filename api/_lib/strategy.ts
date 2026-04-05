@@ -26,6 +26,8 @@ export interface StrategyParams {
   minVolatilityPct?: number;
   maxVolatilityPct?: number;
   confirmBars?: number;
+  adaptiveWeights?: boolean;
+  trendRegimeThresholdPct?: number;
   rsiWeight?: number;
   macdWeight?: number;
   bbWeight?: number;
@@ -84,10 +86,10 @@ export function getStrategySignal(
   closes: number[],
   params: StrategyParams = {},
 ): StrategySignal {
-  const base = computeScore(strategy, closes, params);
-  const indicators = base.indicators;
   const volatilityPct = calcVolatilityPct(closes, params.volatilityLookback ?? 20);
   const trendPct = calcTrendPct(closes, params.trendEmaFast ?? 20, params.trendEmaSlow ?? 50);
+  const base = computeScore(strategy, closes, params, trendPct);
+  const indicators = base.indicators;
   const buyThreshold = params.buyThreshold ?? 0.5;
   const sellThreshold = params.sellThreshold ?? -0.5;
 
@@ -102,7 +104,8 @@ export function getStrategySignal(
   for (let i = confirmBars - 1; i >= 0; i--) {
     const slice = closes.slice(0, closes.length - i);
     if (slice.length < 30) continue;
-    scores.push(computeScore(strategy, slice, params).score);
+    const sliceTrend = calcTrendPct(slice, params.trendEmaFast ?? 20, params.trendEmaSlow ?? 50);
+    scores.push(computeScore(strategy, slice, params, sliceTrend).score);
   }
   const avgScore = scores.length ? (scores.reduce((s, v) => s + v, 0) / scores.length) : base.score;
   const buyHits = scores.filter(s => s >= buyThreshold).length;
@@ -147,6 +150,7 @@ function computeScore(
   strategy: StrategyType,
   closes: number[],
   params: StrategyParams,
+  trendPct: number,
 ): { score: number; indicators: StrategySignal['indicators'] } {
   const rsi = rsiScore(closes, params.rsiPeriod ?? 14, params.rsiOversold ?? 30, params.rsiOverbought ?? 70);
   const macd = macdScore(closes, params.macdFast ?? 12, params.macdSlow ?? 26, params.macdSignal ?? 9);
@@ -155,6 +159,16 @@ function computeScore(
   const indicators = { rsi, macd, bollinger, ema };
 
   if (strategy === 'COMPOSITE') {
+    const adaptive = params.adaptiveWeights !== false;
+    if (adaptive) {
+      const thresh = params.trendRegimeThresholdPct ?? 0.3;
+      const trending = Math.abs(trendPct) >= thresh;
+      const weights = trending
+        ? { rsi: 0.15, macd: 0.35, bb: 0.15, ema: 0.35 }
+        : { rsi: 0.35, macd: 0.15, bb: 0.35, ema: 0.15 };
+      const score = rsi * weights.rsi + macd * weights.macd + bollinger * weights.bb + ema * weights.ema;
+      return { score, indicators };
+    }
     const composite = compositeStrategy(closes, params);
     return { score: composite.score, indicators };
   }

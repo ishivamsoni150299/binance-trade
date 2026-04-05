@@ -362,6 +362,25 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
                 (ngModelChange)="config.updateStrategy({confirmBars: +$event})">
               <div class="slider-bounds"><span>1</span><span>5</span></div>
             </div>
+            <div class="safe-row">
+              <div class="safe-left">
+                <div class="safe-title">Adaptive Weights</div>
+                <div class="safe-sub">Trend vs range weighting</div>
+              </div>
+              <button class="safe-toggle" [class.active]="cfg().strategyParams.adaptiveWeights" (click)="toggleAdaptiveWeights()">
+                {{ cfg().strategyParams.adaptiveWeights ? 'On' : 'Off' }}
+              </button>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Regime Threshold</span>
+                <span class="slider-val">{{ cfg().strategyParams.trendRegimeThresholdPct.toFixed(2) }}%</span>
+              </div>
+              <input type="range" min="0.1" max="1" step="0.05" class="slider"
+                [ngModel]="cfg().strategyParams.trendRegimeThresholdPct"
+                (ngModelChange)="config.updateStrategy({trendRegimeThresholdPct: +$event})">
+              <div class="slider-bounds"><span>0.1%</span><span>1%</span></div>
+            </div>
             </div>
           }
 
@@ -811,6 +830,8 @@ export class BotConfigComponent {
         minVolatilityPct: 0.5,
         maxVolatilityPct: 5,
         confirmBars: 2,
+        adaptiveWeights: true,
+        trendRegimeThresholdPct: 0.3,
         buyThreshold: 0.55,
         sellThreshold: -0.55,
       });
@@ -849,6 +870,8 @@ export class BotConfigComponent {
       minVolatilityPct: 0.4,
       maxVolatilityPct: 8,
       confirmBars: 2,
+      adaptiveWeights: true,
+      trendRegimeThresholdPct: 0.3,
       buyThreshold: 0.5,
       sellThreshold: -0.5,
     });
@@ -873,6 +896,10 @@ export class BotConfigComponent {
 
   toggleVolatilityFilter(): void {
     this.config.updateStrategy({ useVolatilityFilter: !this.config.config().strategyParams.useVolatilityFilter });
+  }
+
+  toggleAdaptiveWeights(): void {
+    this.config.updateStrategy({ adaptiveWeights: !this.config.config().strategyParams.adaptiveWeights });
   }
 
   toggleDynamicSizing(): void {

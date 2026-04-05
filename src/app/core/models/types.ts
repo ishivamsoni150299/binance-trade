@@ -38,6 +38,8 @@ export interface StrategyParams {
   minVolatilityPct: number;
   maxVolatilityPct: number;
   confirmBars: number;
+  adaptiveWeights: boolean;
+  trendRegimeThresholdPct: number;
   // Composite weights (sum to 1)
   rsiWeight: number;
   macdWeight: number;
@@ -145,6 +147,8 @@ export const DEFAULT_STRATEGY_PARAMS: StrategyParams = {
   minVolatilityPct: 0.4,
   maxVolatilityPct: 8,
   confirmBars: 2,
+  adaptiveWeights: true,
+  trendRegimeThresholdPct: 0.3,
   rsiWeight: 0.25,
   macdWeight: 0.30,
   bbWeight: 0.25,
