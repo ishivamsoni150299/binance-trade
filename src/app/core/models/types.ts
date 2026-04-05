@@ -49,6 +49,8 @@ export interface RiskParams {
 export interface BotConfig {
   enabled: boolean;
   pair: string;               // e.g. BTCUSDT
+  trustedOnly: boolean;
+  trustedPairs: string[];
   timeframe: Timeframe;
   strategy: StrategyType;
   strategyParams: StrategyParams;
@@ -127,9 +129,24 @@ export const DEFAULT_RISK_PARAMS: RiskParams = {
   paperTrading: true,
 };
 
+export const TRUSTED_PAIRS = [
+  'BTCUSDT',
+  'ETHUSDT',
+  'BNBUSDT',
+  'SOLUSDT',
+  'XRPUSDT',
+  'ADAUSDT',
+  'DOGEUSDT',
+  'DOTUSDT',
+  'MATICUSDT',
+  'LINKUSDT',
+];
+
 export const DEFAULT_BOT_CONFIG: BotConfig = {
   enabled: false,
   pair: 'BTCUSDT',
+  trustedOnly: true,
+  trustedPairs: TRUSTED_PAIRS,
   timeframe: '1h',
   strategy: 'COMPOSITE',
   strategyParams: DEFAULT_STRATEGY_PARAMS,

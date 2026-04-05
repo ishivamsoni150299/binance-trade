@@ -1,0 +1,12 @@
+export const TRUSTED_PAIRS = [
+  'BTCUSDT',
+  'ETHUSDT',
+  'BNBUSDT',
+  'SOLUSDT',
+  'XRPUSDT',
+  'ADAUSDT',
+  'DOGEUSDT',
+  'DOTUSDT',
+  'MATICUSDT',
+  'LINKUSDT',
+];

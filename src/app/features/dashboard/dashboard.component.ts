@@ -663,6 +663,8 @@ export class DashboardComponent implements OnInit {
         strategy: cfg.strategy,
         strategyParams: cfg.strategyParams as any,
         riskParams: cfg.riskParams as any,
+        trustedOnly: cfg.trustedOnly,
+        trustedPairs: cfg.trustedPairs,
       });
       if (result.error) this.backtestError.set(result.error);
       else this.backtestResult.set(result);

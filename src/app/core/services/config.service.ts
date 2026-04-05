@@ -39,7 +39,22 @@ export class ConfigService {
   private load(): BotConfig {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return { ...DEFAULT_BOT_CONFIG, ...JSON.parse(raw) };
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const merged: BotConfig = {
+          ...DEFAULT_BOT_CONFIG,
+          ...parsed,
+          strategyParams: { ...DEFAULT_BOT_CONFIG.strategyParams, ...(parsed.strategyParams ?? {}) },
+          riskParams: { ...DEFAULT_BOT_CONFIG.riskParams, ...(parsed.riskParams ?? {}) },
+        };
+        if (!Array.isArray(merged.trustedPairs) || merged.trustedPairs.length === 0) {
+          merged.trustedPairs = [...DEFAULT_BOT_CONFIG.trustedPairs];
+        }
+        if (merged.trustedOnly && !merged.trustedPairs.includes(merged.pair)) {
+          merged.pair = merged.trustedPairs[0];
+        }
+        return merged;
+      }
     } catch {}
     return { ...DEFAULT_BOT_CONFIG };
   }

@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { TitleCasePipe } from '@angular/common';
 import { ConfigService } from '../../core/services/config.service';
 import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
-import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS } from '../../core/models/types';
+import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS } from '../../core/models/types';
 
 @Component({
   selector: 'app-bot-config',
@@ -47,6 +47,26 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS } from '../../
                   <option [value]="pair">{{ pair }}</option>
                 }
               </select>
+            </div>
+            <div class="form-row">
+              <label>Trusted Only</label>
+              <div class="trust-row">
+                <button class="trust-toggle" [class.active]="cfg().trustedOnly" (click)="toggleTrustedOnly()">
+                  {{ cfg().trustedOnly ? 'On' : 'Off' }}
+                </button>
+                <span class="trust-sub">Limit trades to trusted pairs only</span>
+              </div>
+            </div>
+            <div class="form-row">
+              <label>Trusted Pairs</label>
+              <div class="trust-grid">
+                @for (pair of pairs; track pair) {
+                  <button class="trust-chip" [class.active]="isTrusted(pair)" (click)="toggleTrustedPair(pair)">
+                    {{ pair }}
+                  </button>
+                }
+              </div>
+              <div class="trust-hint">Select the pairs you trust for automated trading.</div>
             </div>
             <div class="form-row">
               <label>Timeframe</label>
@@ -299,6 +319,20 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS } from '../../
     .form-row { margin-bottom: 14px; }
     .form-row:last-child { margin-bottom: 0; }
     .form-row label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 500; }
+    .trust-row { display: flex; align-items: center; gap: 10px; }
+    .trust-toggle {
+      min-width: 58px; padding: 6px 10px; border-radius: 16px; border: 1px solid var(--border);
+      background: var(--bg-card); color: var(--text-secondary); font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .trust-toggle.active { background: rgba(38,166,154,0.12); color: var(--green); border-color: rgba(38,166,154,0.4); }
+    .trust-sub { font-size: 11px; color: var(--text-muted); }
+    .trust-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+    .trust-chip {
+      padding: 6px 10px; border-radius: 14px; border: 1px solid var(--border);
+      background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; font-size: 11px; font-weight: 700;
+    }
+    .trust-chip.active { background: rgba(59,130,246,0.12); color: var(--blue); border-color: rgba(59,130,246,0.4); }
+    .trust-hint { margin-top: 6px; font-size: 11px; color: var(--text-muted); }
     select {
       width: 100%; background: var(--bg-hover); border: 1px solid var(--border);
       border-radius: 8px; padding: 8px 12px; color: var(--text-primary); font-size: 13px;
@@ -379,7 +413,7 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS } from '../../
   `]
 })
 export class BotConfigComponent {
-  pairs = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'DOTUSDT', 'MATICUSDT', 'LINKUSDT'];
+  pairs = TRUSTED_PAIRS;
   timeframes: Timeframe[] = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
   strategies: StrategyType[] = ['RSI', 'MACD', 'BOLLINGER', 'EMA', 'COMPOSITE'];
 
@@ -452,5 +486,35 @@ export class BotConfigComponent {
     }
     this.previousRisk = { ...this.config.config().riskParams };
     this.config.updateRisk(this.safeRisk);
+  }
+
+  toggleTrustedOnly(): void {
+    const cfg = this.config.config();
+    const next = !cfg.trustedOnly;
+    this.config.update({ trustedOnly: next });
+    if (next) this.ensurePairIsTrusted();
+  }
+
+  isTrusted(pair: string): boolean {
+    return this.config.config().trustedPairs.includes(pair);
+  }
+
+  toggleTrustedPair(pair: string): void {
+    const cfg = this.config.config();
+    const set = new Set(cfg.trustedPairs);
+    if (set.has(pair)) set.delete(pair);
+    else set.add(pair);
+    if (set.size === 0) return;
+    const next = Array.from(set);
+    this.config.update({ trustedPairs: next });
+    if (cfg.trustedOnly) this.ensurePairIsTrusted();
+  }
+
+  private ensurePairIsTrusted(): void {
+    const cfg = this.config.config();
+    if (!cfg.trustedPairs.includes(cfg.pair)) {
+      const fallback = cfg.trustedPairs[0] ?? 'BTCUSDT';
+      this.config.update({ pair: fallback });
+    }
   }
 }

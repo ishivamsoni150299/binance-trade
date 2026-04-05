@@ -154,13 +154,31 @@ async function runBotCycle(): Promise<void> {
   if (!config) return;
 
   const isPaper = config.riskParams?.paperTrading !== false;
+  const pair = config.pair ?? 'BTCUSDT';
+  const trustedOnly = config.trustedOnly === true;
+  const trustedPairs = Array.isArray(config.trustedPairs) ? config.trustedPairs : [];
+
+  if (trustedOnly && !trustedPairs.includes(pair)) {
+    self.postMessage({
+      type: 'CYCLE_RESULT',
+      result: {
+        action: 'BLOCKED',
+        reason: 'Pair not in trusted list',
+        score: 0,
+        price: 0,
+        indicators: {},
+        timestamp: Date.now(),
+      },
+    });
+    return;
+  }
 
   try {
     self.postMessage({ type: 'CYCLE_START', timestamp: Date.now() });
 
     // Paper mode: run entirely in browser - no Vercel/server needed
     if (isPaper) {
-      const rawKlines = await fetchKlines(config.pair ?? 'BTCUSDT', config.timeframe ?? '1h', 200);
+      const rawKlines = await fetchKlines(pair, config.timeframe ?? '1h', 200);
       const closes = rawKlines.map((k: any[]) => parseFloat(k[4]));
       const currentPrice = closes[closes.length - 1];
       const signal = computeSignal(config.strategy ?? 'COMPOSITE', closes, config.strategyParams);
@@ -192,7 +210,7 @@ async function runBotCycle(): Promise<void> {
 
         trade = {
           id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          pair: config.pair ?? 'BTCUSDT',
+          pair,
           side: signal.action,
           strategy: config.strategy ?? 'COMPOSITE',
           entryPrice: currentPrice,
@@ -220,7 +238,7 @@ async function runBotCycle(): Promise<void> {
         'X-Bot-Secret': config.botSecret ?? '',
       },
       body: JSON.stringify({
-        pair: config.pair,
+        pair,
         timeframe: config.timeframe,
         strategy: config.strategy,
         strategyParams: config.strategyParams,

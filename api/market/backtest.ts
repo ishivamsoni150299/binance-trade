@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getKlinesRange } from '../_lib/binance-client';
 import { getStrategySignal, StrategyParams, StrategyType } from '../_lib/strategy';
+import { TRUSTED_PAIRS } from '../_lib/trusted';
 
 type RiskParams = {
   positionSizePct?: number;
@@ -36,6 +37,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const strategy = (body.strategy ?? 'COMPOSITE') as StrategyType;
     const strategyParams = (body.strategyParams ?? {}) as StrategyParams;
     const riskParams = (body.riskParams ?? {}) as RiskParams;
+    const trustedOnly = String(body.trustedOnly ?? 'true') === 'true';
+    const rawTrusted = body.trustedPairs ?? TRUSTED_PAIRS;
+    const trustedPairs = Array.isArray(rawTrusted)
+      ? rawTrusted
+      : typeof rawTrusted === 'string'
+        ? rawTrusted.split(',').map(s => s.trim()).filter(Boolean)
+        : TRUSTED_PAIRS;
+
+    if (trustedOnly && !trustedPairs.includes(symbol)) {
+      return res.status(200).json({ error: 'Pair not in trusted list' });
+    }
 
     const now = Date.now();
     const startTime = now - days * 86_400_000;

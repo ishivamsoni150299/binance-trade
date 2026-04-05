@@ -98,6 +98,8 @@ export class BotSchedulerService implements OnDestroy {
     const cfg = this.config.config();
     return {
       ...cfg,
+      trustedOnly: cfg.trustedOnly,
+      trustedPairs: cfg.trustedPairs,
       openPositions: this.tradeStore.openTrades().length,
       dailyPnlPct: this.tradeStore.dailyPnlPct(),
     };

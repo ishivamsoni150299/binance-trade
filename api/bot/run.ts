@@ -2,6 +2,7 @@
 import { getKlines, getAvailableBalance, placeOrder, getOpenOrders } from '../_lib/binance-client';
 import { checkRisk } from '../_lib/risk-manager';
 import { getStrategySignal } from '../_lib/strategy';
+import { TRUSTED_PAIRS } from '../_lib/trusted';
 
 const BOT_SECRET = process.env['BOT_SECRET'] ?? '';
 
@@ -31,7 +32,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       paperTrading = true,
       openPositions = 0,
       dailyPnlPct = 0,
+      trustedOnly = true,
+      trustedPairs = TRUSTED_PAIRS,
     } = config;
+
+    const rawTrusted = Array.isArray(trustedPairs)
+      ? trustedPairs
+      : typeof trustedPairs === 'string'
+        ? trustedPairs.split(',').map(s => s.trim()).filter(Boolean)
+        : TRUSTED_PAIRS;
+
+    if (trustedOnly && !rawTrusted.includes(pair)) {
+      return res.status(200).json({
+        action: 'BLOCKED',
+        reason: 'Pair not in trusted list',
+        score: 0,
+        price: 0,
+        indicators: {},
+        timestamp: Date.now(),
+      });
+    }
 
     // 1. Fetch candle history from Binance
     const rawKlines = await getKlines(pair, timeframe, 200);

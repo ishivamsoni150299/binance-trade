@@ -23,6 +23,8 @@ export interface BacktestRequest {
   strategy: string;
   strategyParams: Record<string, number>;
   riskParams: Record<string, number>;
+  trustedOnly?: boolean;
+  trustedPairs?: string[];
 }
 
 export interface BacktestResult {
