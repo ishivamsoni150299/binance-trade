@@ -49,6 +49,15 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
               </select>
             </div>
             <div class="form-row">
+              <label>Auto Pick Best Pair</label>
+              <div class="trust-row">
+                <button class="trust-toggle" [class.active]="cfg().scanEnabled" (click)="toggleScan()">
+                  {{ cfg().scanEnabled ? 'On' : 'Off' }}
+                </button>
+                <span class="trust-sub">Uses trusted pairs with top momentum and volume</span>
+              </div>
+            </div>
+            <div class="form-row">
               <label>Trusted Only</label>
               <div class="trust-row">
                 <button class="trust-toggle" [class.active]="cfg().trustedOnly" (click)="toggleTrustedOnly()">
@@ -185,6 +194,87 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
                 (ngModelChange)="config.updateStrategy({bbPeriod: +$event})">
               <div class="slider-bounds"><span>10</span><span>50</span></div>
             </div>
+
+            <div class="section-title">Filters</div>
+            <div class="safe-row">
+              <div class="safe-left">
+                <div class="safe-title">Trend Filter</div>
+                <div class="safe-sub">Trade only with trend</div>
+              </div>
+              <button class="safe-toggle" [class.active]="cfg().strategyParams.useTrendFilter" (click)="toggleTrendFilter()">
+                {{ cfg().strategyParams.useTrendFilter ? 'On' : 'Off' }}
+              </button>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Trend EMA Fast</span>
+                <span class="slider-val">{{ cfg().strategyParams.trendEmaFast }}</span>
+              </div>
+              <input type="range" min="5" max="50" step="1" class="slider"
+                [ngModel]="cfg().strategyParams.trendEmaFast"
+                (ngModelChange)="config.updateStrategy({trendEmaFast: +$event})">
+              <div class="slider-bounds"><span>5</span><span>50</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Trend EMA Slow</span>
+                <span class="slider-val">{{ cfg().strategyParams.trendEmaSlow }}</span>
+              </div>
+              <input type="range" min="20" max="200" step="5" class="slider"
+                [ngModel]="cfg().strategyParams.trendEmaSlow"
+                (ngModelChange)="config.updateStrategy({trendEmaSlow: +$event})">
+              <div class="slider-bounds"><span>20</span><span>200</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Trend Threshold</span>
+                <span class="slider-val">{{ cfg().strategyParams.trendThresholdPct.toFixed(2) }}%</span>
+              </div>
+              <input type="range" min="0" max="1" step="0.05" class="slider"
+                [ngModel]="cfg().strategyParams.trendThresholdPct"
+                (ngModelChange)="config.updateStrategy({trendThresholdPct: +$event})">
+              <div class="slider-bounds"><span>0%</span><span>1%</span></div>
+            </div>
+
+            <div class="safe-row">
+              <div class="safe-left">
+                <div class="safe-title">Volatility Filter</div>
+                <div class="safe-sub">Avoid flat or extreme moves</div>
+              </div>
+              <button class="safe-toggle" [class.active]="cfg().strategyParams.useVolatilityFilter" (click)="toggleVolatilityFilter()">
+                {{ cfg().strategyParams.useVolatilityFilter ? 'On' : 'Off' }}
+              </button>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Volatility Lookback</span>
+                <span class="slider-val">{{ cfg().strategyParams.volatilityLookback }}</span>
+              </div>
+              <input type="range" min="10" max="50" step="1" class="slider"
+                [ngModel]="cfg().strategyParams.volatilityLookback"
+                (ngModelChange)="config.updateStrategy({volatilityLookback: +$event})">
+              <div class="slider-bounds"><span>10</span><span>50</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Min Volatility</span>
+                <span class="slider-val">{{ cfg().strategyParams.minVolatilityPct.toFixed(2) }}%</span>
+              </div>
+              <input type="range" min="0.1" max="3" step="0.1" class="slider"
+                [ngModel]="cfg().strategyParams.minVolatilityPct"
+                (ngModelChange)="config.updateStrategy({minVolatilityPct: +$event})">
+              <div class="slider-bounds"><span>0.1%</span><span>3%</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Max Volatility</span>
+                <span class="slider-val">{{ cfg().strategyParams.maxVolatilityPct.toFixed(1) }}%</span>
+              </div>
+              <input type="range" min="3" max="15" step="0.5" class="slider"
+                [ngModel]="cfg().strategyParams.maxVolatilityPct"
+                (ngModelChange)="config.updateStrategy({maxVolatilityPct: +$event})">
+              <div class="slider-bounds"><span>3%</span><span>15%</span></div>
+            </div>
           </div>
 
           <!-- Risk management -->
@@ -210,6 +300,45 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
                 [ngModel]="cfg().riskParams.positionSizePct"
                 (ngModelChange)="config.updateRisk({positionSizePct: +$event})">
               <div class="slider-bounds"><span>1%</span><span>20%</span></div>
+            </div>
+            <div class="safe-row">
+              <div class="safe-left">
+                <div class="safe-title">Dynamic Position Sizing</div>
+                <div class="safe-sub">Scale size by signal strength and volatility</div>
+              </div>
+              <button class="safe-toggle" [class.active]="cfg().riskParams.dynamicPositionSizing" (click)="toggleDynamicSizing()">
+                {{ cfg().riskParams.dynamicPositionSizing ? 'On' : 'Off' }}
+              </button>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Min Position Size</span>
+                <span class="slider-val">{{ cfg().riskParams.minPositionSizePct }}%</span>
+              </div>
+              <input type="range" min="0.5" max="10" step="0.5" class="slider"
+                [ngModel]="cfg().riskParams.minPositionSizePct"
+                (ngModelChange)="config.updateRisk({minPositionSizePct: +$event})">
+              <div class="slider-bounds"><span>0.5%</span><span>10%</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Max Position Size</span>
+                <span class="slider-val">{{ cfg().riskParams.maxPositionSizePct }}%</span>
+              </div>
+              <input type="range" min="2" max="20" step="1" class="slider"
+                [ngModel]="cfg().riskParams.maxPositionSizePct"
+                (ngModelChange)="config.updateRisk({maxPositionSizePct: +$event})">
+              <div class="slider-bounds"><span>2%</span><span>20%</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Volatility Target</span>
+                <span class="slider-val">{{ cfg().riskParams.volatilityTargetPct.toFixed(1) }}%</span>
+              </div>
+              <input type="range" min="0.5" max="5" step="0.1" class="slider"
+                [ngModel]="cfg().riskParams.volatilityTargetPct"
+                (ngModelChange)="config.updateRisk({volatilityTargetPct: +$event})">
+              <div class="slider-bounds"><span>0.5%</span><span>5%</span></div>
             </div>
             <div class="slider-row">
               <div class="slider-label">
@@ -303,6 +432,11 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
     .card-title {
       font-size: 11px; font-weight: 700; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 14px;
+    }
+    .section-title {
+      margin: 14px 0 10px;
+      font-size: 11px; font-weight: 700; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.07em;
     }
     .safe-row {
       display: flex; align-items: center; justify-content: space-between;
@@ -435,6 +569,10 @@ export class BotConfigComponent {
     takeProfitPct: 2,
     maxDailyLossPct: 2,
     maxOpenPositions: 1,
+    dynamicPositionSizing: true,
+    minPositionSizePct: 1,
+    maxPositionSizePct: 3,
+    volatilityTargetPct: 2,
     paperTrading: true,
   };
 
@@ -452,7 +590,11 @@ export class BotConfigComponent {
       r.stopLossPct === this.safeRisk.stopLossPct &&
       r.takeProfitPct === this.safeRisk.takeProfitPct &&
       r.maxDailyLossPct === this.safeRisk.maxDailyLossPct &&
-      r.maxOpenPositions === this.safeRisk.maxOpenPositions;
+      r.maxOpenPositions === this.safeRisk.maxOpenPositions &&
+      r.dynamicPositionSizing === this.safeRisk.dynamicPositionSizing &&
+      r.minPositionSizePct === this.safeRisk.minPositionSizePct &&
+      r.maxPositionSizePct === this.safeRisk.maxPositionSizePct &&
+      r.volatilityTargetPct === this.safeRisk.volatilityTargetPct;
   });
 
   constructor(
@@ -486,6 +628,23 @@ export class BotConfigComponent {
     }
     this.previousRisk = { ...this.config.config().riskParams };
     this.config.updateRisk(this.safeRisk);
+  }
+
+  toggleScan(): void {
+    const next = !this.config.config().scanEnabled;
+    this.config.update({ scanEnabled: next });
+  }
+
+  toggleTrendFilter(): void {
+    this.config.updateStrategy({ useTrendFilter: !this.config.config().strategyParams.useTrendFilter });
+  }
+
+  toggleVolatilityFilter(): void {
+    this.config.updateStrategy({ useVolatilityFilter: !this.config.config().strategyParams.useVolatilityFilter });
+  }
+
+  toggleDynamicSizing(): void {
+    this.config.updateRisk({ dynamicPositionSizing: !this.config.config().riskParams.dynamicPositionSizing });
   }
 
   toggleTrustedOnly(): void {

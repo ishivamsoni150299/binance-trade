@@ -28,6 +28,9 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
           </div>
           <span class="pair-chip">{{ config.pair() }}</span>
           <span class="tf-chip">{{ config.timeframe() }}</span>
+          @if (config.config().scanEnabled) {
+            <span class="scan-chip">Auto Pair</span>
+          }
         </div>
       </div>
 
@@ -120,7 +123,12 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
           <div class="panel-header">
             <span class="panel-title">Bot Signal</span>
             @if (bot.lastResult()) {
-              <span class="panel-time">{{ bot.lastResult()!.timestamp | date:'HH:mm:ss' }}</span>
+              <div class="panel-meta">
+                <span class="panel-time">{{ bot.lastResult()!.timestamp | date:'HH:mm:ss' }}</span>
+                @if (bot.lastResult()!.pair) {
+                  <span class="panel-time">Pair: {{ bot.lastResult()!.pair }}</span>
+                }
+              </div>
             }
           </div>
 
@@ -347,6 +355,10 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
       background:var(--bg-card); border:1px solid var(--border);
       padding:4px 10px; border-radius:6px; font-size:12px; color:var(--text-secondary); font-weight:600;
     }
+    .scan-chip {
+      background:rgba(59,130,246,0.1); border:1px solid rgba(59,130,246,0.35);
+      padding:4px 10px; border-radius:6px; font-size:11px; color:var(--blue); font-weight:700;
+    }
 
     /* Price hero */
     .price-hero {
@@ -402,6 +414,7 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
       border-radius:12px; padding:16px;
     }
     .panel-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .panel-meta { display:flex; align-items:center; gap:8px; }
     .panel-title { font-size:12px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.07em; display:flex; align-items:center; gap:6px; }
     .panel-time { font-size:11px; color:var(--text-muted); }
     .panel-count { font-size:18px; font-weight:700; color:var(--text-primary); }

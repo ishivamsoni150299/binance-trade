@@ -1,5 +1,5 @@
 ﻿import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getKlines, getAvailableBalance, placeOrder, getOpenOrders } from '../_lib/binance-client';
+import { getKlines, getAvailableBalance, placeOrder, getOpenOrders, getTickersBySymbols } from '../_lib/binance-client';
 import { checkRisk } from '../_lib/risk-manager';
 import { getStrategySignal } from '../_lib/strategy';
 import { TRUSTED_PAIRS } from '../_lib/trusted';
@@ -34,6 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       dailyPnlPct = 0,
       trustedOnly = true,
       trustedPairs = TRUSTED_PAIRS,
+      scanEnabled = true,
     } = config;
 
     const rawTrusted = Array.isArray(trustedPairs)
@@ -42,23 +43,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? trustedPairs.split(',').map(s => s.trim()).filter(Boolean)
         : TRUSTED_PAIRS;
 
-    if (trustedOnly && !rawTrusted.includes(pair)) {
+    if (trustedOnly && !rawTrusted.includes(pair) && !scanEnabled) {
       return res.status(200).json({
         action: 'BLOCKED',
         reason: 'Pair not in trusted list',
         score: 0,
         price: 0,
         indicators: {},
+        pair,
         timestamp: Date.now(),
       });
     }
 
+    let selectedPair = pair;
+    if (scanEnabled) {
+      const candidates = trustedOnly ? rawTrusted : rawTrusted.length ? rawTrusted : [pair];
+      const best = await pickBestPair(candidates);
+      if (best) selectedPair = best;
+    }
+
     // 1. Fetch candle history from Binance
-    const rawKlines = await getKlines(pair, timeframe, 200);
+    const rawKlines = await getKlines(selectedPair, timeframe, 200);
     const closes = rawKlines.map((k: number[]) => parseFloat(k[4].toString()));
 
     if (closes.length < 30) {
-      return res.status(200).json({ action: 'HOLD', reason: 'Insufficient data', closes: closes.length });
+      return res.status(200).json({ action: 'HOLD', reason: 'Insufficient data', closes: closes.length, pair: selectedPair });
     }
 
     // 2. Run strategy (selected in UI)
@@ -68,7 +77,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const currentPrice = closes[closes.length - 1];
 
     if (signal.action === 'HOLD') {
-      return res.status(200).json({ action: 'HOLD', score: signal.score, price: currentPrice, indicators, timestamp: Date.now() });
+      return res.status(200).json({
+        action: 'HOLD',
+        reason: signal.filterReason,
+        score: signal.score,
+        price: currentPrice,
+        indicators,
+        pair: selectedPair,
+        timestamp: Date.now(),
+      });
     }
 
     // 4. Risk check
@@ -84,12 +101,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         takeProfitPct: riskParams.takeProfitPct ?? 4,
         maxDailyLossPct: riskParams.maxDailyLossPct ?? 5,
         maxOpenPositions: riskParams.maxOpenPositions ?? 1,
+        dynamicPositionSizing: riskParams.dynamicPositionSizing ?? false,
+        minPositionSizePct: riskParams.minPositionSizePct ?? 1,
+        maxPositionSizePct: riskParams.maxPositionSizePct ?? 10,
+        volatilityTargetPct: riskParams.volatilityTargetPct ?? 2,
       },
       currentPrice,
       availableBalance,
       openPositions,
       dailyPnlPct,
       signal.action,
+      signal.score,
+      signal.volatilityPct,
     );
 
     if (!risk.allowed) {
@@ -99,6 +122,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         score: signal.score,
         price: currentPrice,
         indicators,
+        pair: selectedPair,
         timestamp: Date.now(),
       });
     }
@@ -113,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (paperTrading) {
       trade = {
         id: tradeId,
-        pair,
+        pair: selectedPair,
         side: signal.action,
         strategy,
         entryPrice: currentPrice,
@@ -128,10 +152,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         takeProfitPrice,
       };
     } else {
-      const order = await placeOrder(pair, signal.action, risk.positionSize!);
+      const order = await placeOrder(selectedPair, signal.action, risk.positionSize!);
       trade = {
         id: tradeId,
-        pair,
+        pair: selectedPair,
         side: signal.action,
         strategy,
         entryPrice: parseFloat(order.fills?.[0]?.price ?? currentPrice),
@@ -153,6 +177,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       score: signal.score,
       price: currentPrice,
       indicators,
+      pair: selectedPair,
       trade,
       timestamp: Date.now(),
     });
@@ -160,5 +185,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (err: any) {
     console.error('Bot run error:', err);
     return res.status(500).json({ error: err.message ?? 'Internal error', timestamp: Date.now() });
+  }
+}
+
+async function pickBestPair(symbols: string[]): Promise<string | null> {
+  if (!symbols.length) return null;
+  try {
+    const tickers = await getTickersBySymbols(symbols);
+    if (!Array.isArray(tickers) || tickers.length === 0) return symbols[0];
+    let maxMomentum = 0;
+    let maxVolume = 0;
+    for (const t of tickers) {
+      const momentum = Math.abs(parseFloat(t.priceChangePercent ?? '0'));
+      const volume = parseFloat(t.quoteVolume ?? '0');
+      if (momentum > maxMomentum) maxMomentum = momentum;
+      if (volume > maxVolume) maxVolume = volume;
+    }
+    let best = symbols[0];
+    let bestScore = -1;
+    for (const t of tickers) {
+      const momentum = Math.abs(parseFloat(t.priceChangePercent ?? '0'));
+      const volume = parseFloat(t.quoteVolume ?? '0');
+      const momentumScore = maxMomentum > 0 ? momentum / maxMomentum : 0;
+      const volumeScore = maxVolume > 0 ? volume / maxVolume : 0;
+      const score = momentumScore * 0.6 + volumeScore * 0.4;
+      if (score > bestScore) {
+        bestScore = score;
+        best = t.symbol ?? best;
+      }
+    }
+    return best;
+  } catch {
+    return symbols[0] ?? null;
   }
 }

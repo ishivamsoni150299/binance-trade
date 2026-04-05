@@ -8,6 +8,7 @@ export interface CycleResult {
   score: number;
   price: number;
   indicators: Record<string, number>;
+  pair?: string;
   trade?: Trade;
   reason?: string;
   timestamp: number;
@@ -100,6 +101,7 @@ export class BotSchedulerService implements OnDestroy {
       ...cfg,
       trustedOnly: cfg.trustedOnly,
       trustedPairs: cfg.trustedPairs,
+      scanEnabled: cfg.scanEnabled,
       openPositions: this.tradeStore.openTrades().length,
       dailyPnlPct: this.tradeStore.dailyPnlPct(),
     };

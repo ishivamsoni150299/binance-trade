@@ -28,6 +28,15 @@ export interface StrategyParams {
   // EMA Crossover
   emaFast: number;
   emaSlow: number;
+  // Filters
+  useTrendFilter: boolean;
+  trendEmaFast: number;
+  trendEmaSlow: number;
+  trendThresholdPct: number;
+  useVolatilityFilter: boolean;
+  volatilityLookback: number;
+  minVolatilityPct: number;
+  maxVolatilityPct: number;
   // Composite weights (sum to 1)
   rsiWeight: number;
   macdWeight: number;
@@ -43,6 +52,10 @@ export interface RiskParams {
   takeProfitPct: number;      // % above entry
   maxDailyLossPct: number;    // pause bot if daily loss exceeds this
   maxOpenPositions: number;   // max concurrent open trades
+  dynamicPositionSizing: boolean;
+  minPositionSizePct: number;
+  maxPositionSizePct: number;
+  volatilityTargetPct: number;
   paperTrading: boolean;
 }
 
@@ -51,6 +64,7 @@ export interface BotConfig {
   pair: string;               // e.g. BTCUSDT
   trustedOnly: boolean;
   trustedPairs: string[];
+  scanEnabled: boolean;
   timeframe: Timeframe;
   strategy: StrategyType;
   strategyParams: StrategyParams;
@@ -112,6 +126,14 @@ export const DEFAULT_STRATEGY_PARAMS: StrategyParams = {
   bbMultiplier: 2,
   emaFast: 9,
   emaSlow: 21,
+  useTrendFilter: true,
+  trendEmaFast: 20,
+  trendEmaSlow: 50,
+  trendThresholdPct: 0.1,
+  useVolatilityFilter: true,
+  volatilityLookback: 20,
+  minVolatilityPct: 0.4,
+  maxVolatilityPct: 8,
   rsiWeight: 0.25,
   macdWeight: 0.30,
   bbWeight: 0.25,
@@ -126,6 +148,10 @@ export const DEFAULT_RISK_PARAMS: RiskParams = {
   takeProfitPct: 4,
   maxDailyLossPct: 5,
   maxOpenPositions: 1,
+  dynamicPositionSizing: true,
+  minPositionSizePct: 1,
+  maxPositionSizePct: 8,
+  volatilityTargetPct: 2,
   paperTrading: true,
 };
 
@@ -147,6 +173,7 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   pair: 'BTCUSDT',
   trustedOnly: true,
   trustedPairs: TRUSTED_PAIRS,
+  scanEnabled: true,
   timeframe: '1h',
   strategy: 'COMPOSITE',
   strategyParams: DEFAULT_STRATEGY_PARAMS,

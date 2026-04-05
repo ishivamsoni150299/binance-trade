@@ -83,6 +83,32 @@ export async function getKlines(
   throw lastError ?? new Error('All Binance hosts failed for klines');
 }
 
+export async function getTickersBySymbols(symbols: string[]): Promise<any[]> {
+  if (!symbols.length) return [];
+
+  if (process.env['BINANCE_TESTNET'] === 'true') {
+    return request('GET', '/v3/ticker/24hr', { symbols: JSON.stringify(symbols) });
+  }
+
+  let lastError: Error | null = null;
+  for (const host of PUBLIC_HOSTS) {
+    try {
+      const qs = new URLSearchParams({ symbols: JSON.stringify(symbols) }).toString();
+      const url = `${host}/api/v3/ticker/24hr?${qs}`;
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BTrader/1.0)' },
+        signal: AbortSignal.timeout(8000),
+      });
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error(data?.msg ?? 'Non-array response');
+      return data;
+    } catch (err: any) {
+      lastError = err;
+    }
+  }
+  throw lastError ?? new Error('All Binance hosts failed for tickers');
+}
+
 function intervalToMs(interval: string): number {
   switch (interval) {
     case '1m': return 60_000;

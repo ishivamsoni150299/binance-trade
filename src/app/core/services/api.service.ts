@@ -72,12 +72,29 @@ async function binanceFetch(path: string): Promise<any> {
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
+  private cache = new Map<string, { ts: number; data: any }>();
+
   constructor(private http: HttpClient) {}
 
+  private async cached<T>(key: string, ttlMs: number, fn: () => Promise<T>, force = false): Promise<T> {
+    const now = Date.now();
+    const hit = this.cache.get(key);
+    if (!force && hit && (now - hit.ts) < ttlMs) {
+      return hit.data as T;
+    }
+    const data = await fn();
+    this.cache.set(key, { ts: now, data });
+    return data;
+  }
+
   // Public market data - called directly from the browser (bypasses Vercel/AWS block)
-  async getKlines(symbol: string, interval: string, limit = 200): Promise<Candle[]> {
-    const raw = await binanceFetch(
-      `/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+  async getKlines(symbol: string, interval: string, limit = 200, force = false): Promise<Candle[]> {
+    const key = `klines:${symbol}:${interval}:${limit}`;
+    const raw = await this.cached(
+      key,
+      5000,
+      () => binanceFetch(`/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`),
+      force
     );
     return (raw as any[]).map((k: any[]) => ({
       time: Math.floor(Number(k[0]) / 1000),
@@ -89,17 +106,22 @@ export class ApiService {
     }));
   }
 
-  async getTickersBySymbols(symbols: string[]): Promise<any[]> {
-    return binanceFetch(
-      `/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`
+  async getTickersBySymbols(symbols: string[], force = false): Promise<any[]> {
+    const key = `tickers:${symbols.join(',')}`;
+    return this.cached(
+      key,
+      10000,
+      () => binanceFetch(`/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`),
+      force
     );
   }
 
-  async getMiniTickers(window: '1h' | '4h' | '24h'): Promise<any[]> {
+  async getMiniTickers(window: '1h' | '4h' | '24h', force = false): Promise<any[]> {
+    const key = `mini:${window}`;
     const path = window === '24h'
       ? `/api/v3/ticker/24hr?type=MINI`
       : `/api/v3/ticker?windowSize=${window}&type=MINI`;
-    return binanceFetch(path);
+    return this.cached(key, 10000, () => binanceFetch(path), force);
   }
 
   // Signed / bot actions - must go through Vercel proxy (server holds API keys)

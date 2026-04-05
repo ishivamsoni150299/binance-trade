@@ -34,7 +34,7 @@ const BLOCK = ['UP','DOWN','BULL','BEAR','3L','3S','2L','2S'];
         </div>
         <div class="header-right">
           @if (lastUpdated()) { <span class="last-update">Updated {{ lastUpdated() }}</span> }
-          <button class="refresh-btn" (click)="load()" [disabled]="loading()">
+          <button class="refresh-btn" (click)="load(true)" [disabled]="loading()">
             {{ loading() ? 'Loading...' : 'Refresh' }}
           </button>
         </div>
@@ -158,12 +158,12 @@ const BLOCK = ['UP','DOWN','BULL','BEAR','3L','3S','2L','2S'];
             <div class="ms-divider"></div>
             <div class="ms-item">
               <span class="ms-label">Best Performer</span>
-              <span class="ms-val positive">{{ gainers()[0]?.name ?? '-' }} {{ gainers()[0] ? '+' + gainers()[0].changePct.toFixed(2) + '%' : '' }}</span>
+              <span class="ms-val positive">{{ gainers().length ? gainers()[0].name : '-' }} {{ gainers().length ? '+' + gainers()[0].changePct.toFixed(2) + '%' : '' }}</span>
             </div>
             <div class="ms-divider"></div>
             <div class="ms-item">
               <span class="ms-label">Worst Performer</span>
-              <span class="ms-val negative">{{ losers()[0]?.name ?? '-' }} {{ losers()[0] ? losers()[0].changePct.toFixed(2) + '%' : '' }}</span>
+              <span class="ms-val negative">{{ losers().length ? losers()[0].name : '-' }} {{ losers().length ? losers()[0].changePct.toFixed(2) + '%' : '' }}</span>
             </div>
           </div>
         }
@@ -317,12 +317,12 @@ export class MarketComponent implements OnInit {
     this.load();
   }
 
-  async load(): Promise<void> {
+  async load(force = false): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
     try {
       const iv = this.interval();
-      const raw = await this.api.getMiniTickers(iv);
+      const raw = await this.api.getMiniTickers(iv, force);
       if (!Array.isArray(raw)) throw new Error('Bad response from Binance');
 
       const coins: CoinTicker[] = (raw as any[])

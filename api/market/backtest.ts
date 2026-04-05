@@ -1,12 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getKlinesRange } from '../_lib/binance-client';
 import { getStrategySignal, StrategyParams, StrategyType } from '../_lib/strategy';
+import { computePositionSizePct } from '../_lib/risk-manager';
 import { TRUSTED_PAIRS } from '../_lib/trusted';
 
 type RiskParams = {
   positionSizePct?: number;
   stopLossPct?: number;
   takeProfitPct?: number;
+  dynamicPositionSizing?: boolean;
+  minPositionSizePct?: number;
+  maxPositionSizePct?: number;
+  volatilityTargetPct?: number;
 };
 
 function intervalToMs(interval: string): number {
@@ -83,7 +88,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const minBars = Math.max(30, Math.floor(60_000 / intervalToMs(interval)));
     const stopLossPct = riskParams.stopLossPct ?? 2;
     const takeProfitPct = riskParams.takeProfitPct ?? 4;
-    const positionSizePct = riskParams.positionSizePct ?? 5;
 
     for (let i = minBars; i < candles.length; i++) {
       const slice = candles.slice(0, i + 1);
@@ -119,6 +123,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (!position && (signal.action === 'BUY' || signal.action === 'SELL')) {
+        const positionSizePct = computePositionSizePct({
+          positionSizePct: riskParams.positionSizePct ?? 5,
+          stopLossPct,
+          takeProfitPct,
+          maxDailyLossPct: 100,
+          maxOpenPositions: 99,
+          dynamicPositionSizing: riskParams.dynamicPositionSizing ?? false,
+          minPositionSizePct: riskParams.minPositionSizePct ?? 1,
+          maxPositionSizePct: riskParams.maxPositionSizePct ?? 10,
+          volatilityTargetPct: riskParams.volatilityTargetPct ?? 2,
+        }, signal.score, signal.volatilityPct);
+
         const riskAmount = balance * (positionSizePct / 100);
         const qty = riskAmount / price;
         const stop = signal.action === 'BUY'

@@ -2,6 +2,7 @@
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let config: any = null;
+let tickerCache: { key: string; ts: number; data: any[] } | null = null;
 
 self.onmessage = (evt) => {
   const { type, payload } = evt.data;
@@ -37,6 +38,33 @@ const BINANCE_HOSTS = [
   'https://api3.binance.com',
 ];
 
+async function fetchTickersBySymbols(symbols: string[]): Promise<any[]> {
+  let lastErr: Error | null = null;
+  for (const host of BINANCE_HOSTS) {
+    try {
+      const res = await fetch(
+        `${host}/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(symbols))}`,
+        { signal: AbortSignal.timeout(8000) }
+      );
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+      throw new Error(data?.msg ?? 'Non-array response');
+    } catch (e: any) { lastErr = e; }
+  }
+  throw lastErr ?? new Error('All Binance hosts failed');
+}
+
+async function getTickersCached(symbols: string[]): Promise<any[]> {
+  const key = symbols.join(',');
+  const now = Date.now();
+  if (tickerCache && tickerCache.key === key && (now - tickerCache.ts) < 60000) {
+    return tickerCache.data;
+  }
+  const data = await fetchTickersBySymbols(symbols);
+  tickerCache = { key, ts: now, data };
+  return data;
+}
+
 async function fetchKlines(symbol: string, interval: string, limit = 200): Promise<number[][]> {
   let lastErr: Error | null = null;
   for (const host of BINANCE_HOSTS) {
@@ -64,6 +92,31 @@ function calcEma(vals: number[], period: number): number[] {
     out.push(ema);
   }
   return out;
+}
+
+function calcVolatilityPct(closes: number[], lookback: number): number {
+  if (closes.length < lookback + 1) return 0;
+  const start = closes.length - lookback;
+  const rets: number[] = [];
+  for (let i = start; i < closes.length; i++) {
+    const prev = closes[i - 1];
+    const cur = closes[i];
+    if (prev <= 0) continue;
+    rets.push(((cur - prev) / prev) * 100);
+  }
+  if (rets.length === 0) return 0;
+  const mean = rets.reduce((s, v) => s + v, 0) / rets.length;
+  const variance = rets.reduce((s, v) => s + (v - mean) ** 2, 0) / rets.length;
+  return Math.sqrt(variance);
+}
+
+function calcTrendPct(closes: number[], fast: number, slow: number): number {
+  const f = calcEma(closes, fast);
+  const s = calcEma(closes, slow);
+  if (!f.length || !s.length) return 0;
+  const fNow = f[f.length - 1];
+  const sNow = s[s.length - 1];
+  return sNow === 0 ? 0 : ((fNow - sNow) / sNow) * 100;
 }
 
 function rsiScore(closes: number[], period = 14, oversold = 30, overbought = 70): number {
@@ -129,6 +182,8 @@ function computeSignal(strategy: string, closes: number[], params: any) {
   const indicators = { rsi, macd, bollinger, ema };
   const buyTh = p.buyThreshold ?? 0.5;
   const sellTh = p.sellThreshold ?? -0.5;
+  const volatilityPct = calcVolatilityPct(closes, p.volatilityLookback ?? 20);
+  const trendPct = calcTrendPct(closes, p.trendEmaFast ?? 20, p.trendEmaSlow ?? 50);
 
   let score: number;
   if (strategy === 'RSI') score = rsi;
@@ -146,7 +201,84 @@ function computeSignal(strategy: string, closes: number[], params: any) {
   const action: 'BUY' | 'SELL' | 'HOLD' =
     score >= buyTh ? 'BUY' : score <= sellTh ? 'SELL' : 'HOLD';
 
-  return { action, score, indicators };
+  const filtered = applyFilters(action, volatilityPct, trendPct, p);
+  return { action: filtered.action, score, indicators, volatilityPct, trendPct, filterReason: filtered.reason };
+}
+
+function applyFilters(
+  action: 'BUY' | 'SELL' | 'HOLD',
+  volatilityPct: number,
+  trendPct: number,
+  params: any,
+): { action: 'BUY' | 'SELL' | 'HOLD'; reason?: string } {
+  if (action === 'HOLD') return { action };
+
+  const useVol = params.useVolatilityFilter !== false;
+  const minVol = params.minVolatilityPct ?? 0.4;
+  const maxVol = params.maxVolatilityPct ?? 8;
+  if (useVol && (volatilityPct < minVol || volatilityPct > maxVol)) {
+    return { action: 'HOLD', reason: 'Volatility filter' };
+  }
+
+  const useTrend = params.useTrendFilter !== false;
+  const threshold = params.trendThresholdPct ?? 0.1;
+  if (useTrend) {
+    if (action === 'BUY' && trendPct < threshold) return { action: 'HOLD', reason: 'Trend filter' };
+    if (action === 'SELL' && trendPct > -threshold) return { action: 'HOLD', reason: 'Trend filter' };
+  }
+
+  return { action };
+}
+
+function computePositionSizePct(risk: any, signalScore: number, volatilityPct: number): number {
+  const base = risk.positionSizePct ?? 5;
+  if (!risk.dynamicPositionSizing) return base;
+  const strength = Math.min(1, Math.abs(signalScore));
+  const volTarget = risk.volatilityTargetPct ?? 2;
+  const minPct = risk.minPositionSizePct ?? Math.min(1, base);
+  const maxPct = risk.maxPositionSizePct ?? base;
+
+  let volFactor = 1;
+  if (volatilityPct && volatilityPct > 0) {
+    volFactor = volTarget / volatilityPct;
+  }
+  volFactor = Math.max(0.5, Math.min(1.5, volFactor));
+
+  let sizePct = base * strength * volFactor;
+  sizePct = Math.max(minPct, Math.min(maxPct, sizePct));
+  return sizePct;
+}
+
+async function pickBestPair(symbols: string[]): Promise<string | null> {
+  if (!symbols.length) return null;
+  try {
+    const tickers = await getTickersCached(symbols);
+    if (!Array.isArray(tickers) || tickers.length === 0) return symbols[0];
+    let maxMomentum = 0;
+    let maxVolume = 0;
+    for (const t of tickers) {
+      const momentum = Math.abs(parseFloat(t.priceChangePercent ?? '0'));
+      const volume = parseFloat(t.quoteVolume ?? '0');
+      if (momentum > maxMomentum) maxMomentum = momentum;
+      if (volume > maxVolume) maxVolume = volume;
+    }
+    let best = symbols[0];
+    let bestScore = -1;
+    for (const t of tickers) {
+      const momentum = Math.abs(parseFloat(t.priceChangePercent ?? '0'));
+      const volume = parseFloat(t.quoteVolume ?? '0');
+      const momentumScore = maxMomentum > 0 ? momentum / maxMomentum : 0;
+      const volumeScore = maxVolume > 0 ? volume / maxVolume : 0;
+      const score = momentumScore * 0.6 + volumeScore * 0.4;
+      if (score > bestScore) {
+        bestScore = score;
+        best = t.symbol ?? best;
+      }
+    }
+    return best;
+  } catch {
+    return symbols[0] ?? null;
+  }
 }
 
 // Main bot cycle
@@ -157,8 +289,9 @@ async function runBotCycle(): Promise<void> {
   const pair = config.pair ?? 'BTCUSDT';
   const trustedOnly = config.trustedOnly === true;
   const trustedPairs = Array.isArray(config.trustedPairs) ? config.trustedPairs : [];
+  const scanEnabled = config.scanEnabled === true;
 
-  if (trustedOnly && !trustedPairs.includes(pair)) {
+  if (trustedOnly && !trustedPairs.includes(pair) && !scanEnabled) {
     self.postMessage({
       type: 'CYCLE_RESULT',
       result: {
@@ -167,6 +300,7 @@ async function runBotCycle(): Promise<void> {
         score: 0,
         price: 0,
         indicators: {},
+        pair,
         timestamp: Date.now(),
       },
     });
@@ -178,7 +312,14 @@ async function runBotCycle(): Promise<void> {
 
     // Paper mode: run entirely in browser - no Vercel/server needed
     if (isPaper) {
-      const rawKlines = await fetchKlines(pair, config.timeframe ?? '1h', 200);
+      let selectedPair = pair;
+      if (scanEnabled) {
+        const candidates = trustedOnly ? trustedPairs : (trustedPairs.length ? trustedPairs : [pair]);
+        const best = await pickBestPair(candidates);
+        if (best) selectedPair = best;
+      }
+
+      const rawKlines = await fetchKlines(selectedPair, config.timeframe ?? '1h', 200);
       const closes = rawKlines.map((k: any[]) => parseFloat(k[4]));
       const currentPrice = closes[closes.length - 1];
       const signal = computeSignal(config.strategy ?? 'COMPOSITE', closes, config.strategyParams);
@@ -187,17 +328,17 @@ async function runBotCycle(): Promise<void> {
       const maxDailyLossPct = risk.maxDailyLossPct ?? 5;
 
       if ((config.openPositions ?? 0) >= maxOpenPositions && signal.action !== 'HOLD') {
-        self.postMessage({ type: 'CYCLE_RESULT', result: { action: 'BLOCKED', reason: 'Max open positions reached', score: signal.score, price: currentPrice, indicators: signal.indicators, timestamp: Date.now() } });
+        self.postMessage({ type: 'CYCLE_RESULT', result: { action: 'BLOCKED', reason: 'Max open positions reached', score: signal.score, price: currentPrice, indicators: signal.indicators, pair: selectedPair, timestamp: Date.now() } });
         return;
       }
       if ((config.dailyPnlPct ?? 0) <= -maxDailyLossPct) {
-        self.postMessage({ type: 'CYCLE_RESULT', result: { action: 'BLOCKED', reason: 'Daily loss limit reached', score: signal.score, price: currentPrice, indicators: signal.indicators, timestamp: Date.now() } });
+        self.postMessage({ type: 'CYCLE_RESULT', result: { action: 'BLOCKED', reason: 'Daily loss limit reached', score: signal.score, price: currentPrice, indicators: signal.indicators, pair: selectedPair, timestamp: Date.now() } });
         return;
       }
 
       let trade = null;
       if (signal.action !== 'HOLD') {
-        const positionSizePct = risk.positionSizePct ?? 5;
+        const positionSizePct = computePositionSizePct(risk, signal.score, signal.volatilityPct);
         const stopLossPct = risk.stopLossPct ?? 2;
         const takeProfitPct = risk.takeProfitPct ?? 4;
         const quantity = (10000 * positionSizePct / 100) / currentPrice;
@@ -210,7 +351,7 @@ async function runBotCycle(): Promise<void> {
 
         trade = {
           id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          pair,
+          pair: selectedPair,
           side: signal.action,
           strategy: config.strategy ?? 'COMPOSITE',
           entryPrice: currentPrice,
@@ -226,7 +367,7 @@ async function runBotCycle(): Promise<void> {
         };
       }
 
-      self.postMessage({ type: 'CYCLE_RESULT', result: { action: signal.action, score: signal.score, price: currentPrice, indicators: signal.indicators, trade, timestamp: Date.now() } });
+      self.postMessage({ type: 'CYCLE_RESULT', result: { action: signal.action, score: signal.score, price: currentPrice, indicators: signal.indicators, pair: selectedPair, trade, reason: signal.filterReason, timestamp: Date.now() } });
       return;
     }
 
@@ -246,6 +387,9 @@ async function runBotCycle(): Promise<void> {
         paperTrading: false,
         openPositions: config.openPositions ?? 0,
         dailyPnlPct: config.dailyPnlPct ?? 0,
+        trustedOnly: config.trustedOnly ?? true,
+        trustedPairs: config.trustedPairs ?? [],
+        scanEnabled: config.scanEnabled ?? true,
       }),
     });
 
