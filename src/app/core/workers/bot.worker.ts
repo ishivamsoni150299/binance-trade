@@ -38,6 +38,15 @@ const BINANCE_HOSTS = [
   'https://api3.binance.com',
 ];
 
+function toNumber(value: any, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
+
 async function fetchTickersBySymbols(symbols: string[]): Promise<any[]> {
   let lastErr: Error | null = null;
   for (const host of BINANCE_HOSTS) {
@@ -382,13 +391,32 @@ async function runBotCycle(): Promise<void> {
   const trustedOnly = config.trustedOnly === true;
   const trustedPairs = Array.isArray(config.trustedPairs) ? config.trustedPairs : [];
   const scanEnabled = config.scanEnabled === true;
-  const scanTopN = config.scanTopN ?? 3;
-  const scanMinQuoteVolume = config.scanMinQuoteVolume ?? 10_000_000;
-  const scanRotationSec = config.scanRotationSec ?? 60;
+  const scanTopN = clamp(Math.floor(toNumber(config.scanTopN, 3)), 1, 10);
+  const scanMinQuoteVolume = clamp(toNumber(config.scanMinQuoteVolume, 10_000_000), 1_000_000, 1_000_000_000);
+  const scanRotationSec = clamp(Math.floor(toNumber(config.scanRotationSec, 60)), 0, 600);
   const risk = config.riskParams ?? {};
+  const safeRisk = {
+    positionSizePct: clamp(toNumber(risk.positionSizePct, 5), 0.1, 20),
+    stopLossPct: clamp(toNumber(risk.stopLossPct, 2), 0.1, 20),
+    takeProfitPct: clamp(toNumber(risk.takeProfitPct, 4), 0.1, 50),
+    maxDailyLossPct: clamp(toNumber(risk.maxDailyLossPct, 5), 1, 50),
+    maxOpenPositions: clamp(Math.floor(toNumber(risk.maxOpenPositions, 1)), 1, 10),
+    dynamicPositionSizing: risk.dynamicPositionSizing ?? false,
+    minPositionSizePct: clamp(toNumber(risk.minPositionSizePct, 1), 0.1, 10),
+    maxPositionSizePct: clamp(toNumber(risk.maxPositionSizePct, 10), 0.5, 20),
+    volatilityTargetPct: clamp(toNumber(risk.volatilityTargetPct, 2), 0.2, 10),
+    maxDrawdownPct: clamp(toNumber(risk.maxDrawdownPct, 12), 5, 80),
+    cooldownSec: clamp(toNumber(risk.cooldownSec, 90), 0, 3600),
+    noTradeStartHour: clamp(Math.floor(toNumber(risk.noTradeStartHour, 0)), 0, 23),
+    noTradeEndHour: clamp(Math.floor(toNumber(risk.noTradeEndHour, 0)), 0, 23),
+  };
   const now = Date.now();
+  const safeTimeframes = new Set(['1m','5m','15m','30m','1h','4h','1d']);
+  const safeStrategies = new Set(['RSI','MACD','BOLLINGER','EMA','COMPOSITE']);
+  const safeTimeframe = safeTimeframes.has(String(config.timeframe)) ? String(config.timeframe) : '1h';
+  const safeStrategy = safeStrategies.has(String(config.strategy)) ? String(config.strategy) : 'COMPOSITE';
 
-  if (risk.maxDrawdownPct && (config.maxDrawdownPct ?? 0) >= risk.maxDrawdownPct) {
+  if (safeRisk.maxDrawdownPct && (config.maxDrawdownPct ?? 0) >= safeRisk.maxDrawdownPct) {
     self.postMessage({
       type: 'CYCLE_RESULT',
       result: {
@@ -404,7 +432,7 @@ async function runBotCycle(): Promise<void> {
     return;
   }
 
-  if (risk.cooldownSec && config.lastClosedAt && (now - config.lastClosedAt) < risk.cooldownSec * 1000) {
+  if (safeRisk.cooldownSec && config.lastClosedAt && (now - config.lastClosedAt) < safeRisk.cooldownSec * 1000) {
     self.postMessage({
       type: 'CYCLE_RESULT',
       result: {
@@ -420,7 +448,7 @@ async function runBotCycle(): Promise<void> {
     return;
   }
 
-  if (inNoTradeWindow(risk.noTradeStartHour ?? 0, risk.noTradeEndHour ?? 0)) {
+  if (inNoTradeWindow(safeRisk.noTradeStartHour, safeRisk.noTradeEndHour)) {
     self.postMessage({
       type: 'CYCLE_RESULT',
       result: {
@@ -463,7 +491,7 @@ async function runBotCycle(): Promise<void> {
         const candidates = trustedOnly ? trustedPairs : (trustedPairs.length ? trustedPairs : [pair]);
         const tickers = await getTickersCached(candidates);
         const lists = buildScanLists(tickers, scanMinQuoteVolume, scanTopN, scanRotationSec);
-        const best = await pickPairBySignal(lists, config.timeframe ?? '1h', config.strategy ?? 'COMPOSITE', config.strategyParams);
+        const best = await pickPairBySignal(lists, safeTimeframe, safeStrategy, config.strategyParams);
         if (best) {
           selectedPair = best.pair;
           signal = best.signal;
@@ -472,12 +500,12 @@ async function runBotCycle(): Promise<void> {
         }
       }
 
-      const rawKlines = await fetchKlines(selectedPair, config.timeframe ?? '1h', 200);
+      const rawKlines = await fetchKlines(selectedPair, safeTimeframe, 200);
       const closes = rawKlines.map((k: any[]) => parseFloat(k[4]));
       const currentPrice = closes[closes.length - 1];
-      if (!signal) signal = computeSignal(config.strategy ?? 'COMPOSITE', closes, config.strategyParams);
-      const maxOpenPositions = risk.maxOpenPositions ?? 1;
-      const maxDailyLossPct = risk.maxDailyLossPct ?? 5;
+      if (!signal) signal = computeSignal(safeStrategy, closes, config.strategyParams);
+      const maxOpenPositions = safeRisk.maxOpenPositions ?? 1;
+      const maxDailyLossPct = safeRisk.maxDailyLossPct ?? 5;
 
       if ((config.openPositions ?? 0) >= maxOpenPositions && signal.action !== 'HOLD') {
         self.postMessage({ type: 'CYCLE_RESULT', result: { action: 'BLOCKED', reason: 'Max open positions reached', score: signal.score, price: currentPrice, indicators: signal.indicators, pair: selectedPair, timestamp: Date.now() } });
@@ -490,9 +518,9 @@ async function runBotCycle(): Promise<void> {
 
       let trade = null;
       if (signal.action !== 'HOLD') {
-        const positionSizePct = computePositionSizePct(risk, signal.score, signal.volatilityPct);
-        const stopLossPct = risk.stopLossPct ?? 2;
-        const takeProfitPct = risk.takeProfitPct ?? 4;
+        const positionSizePct = computePositionSizePct(safeRisk, signal.score, signal.volatilityPct);
+        const stopLossPct = safeRisk.stopLossPct ?? 2;
+        const takeProfitPct = safeRisk.takeProfitPct ?? 4;
         const quantity = (10000 * positionSizePct / 100) / currentPrice;
         const stopLossPrice = signal.action === 'BUY'
           ? currentPrice * (1 - stopLossPct / 100)
@@ -505,7 +533,7 @@ async function runBotCycle(): Promise<void> {
           id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           pair: selectedPair,
           side: signal.action,
-          strategy: config.strategy ?? 'COMPOSITE',
+          strategy: safeStrategy,
           entryPrice: currentPrice,
           quantity,
           fee: quantity * currentPrice * 0.001,

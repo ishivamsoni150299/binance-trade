@@ -27,6 +27,15 @@ function intervalToMs(interval: string): number {
   }
 }
 
+function toNumber(value: any, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
@@ -54,9 +63,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ error: 'Pair not in trusted list' });
     }
 
+    const safeTimeframes = new Set(['1m','5m','15m','30m','1h','4h','1d']);
+    const safeStrategies = new Set(['RSI','MACD','BOLLINGER','EMA','COMPOSITE']);
+    const safeInterval = safeTimeframes.has(String(interval)) ? String(interval) : '1h';
+    const safeStrategy = safeStrategies.has(String(strategy)) ? (String(strategy) as StrategyType) : 'COMPOSITE';
+
     const now = Date.now();
     const startTime = now - days * 86_400_000;
-    const rawAll = await getKlinesRange(symbol, interval, startTime, now, 1000);
+    const rawAll = await getKlinesRange(symbol, safeInterval, startTime, now, 1000);
     if (!rawAll.length) return res.status(200).json({ error: 'No data for range' });
     const maxCandles = 5000;
     const sliced = rawAll.length > maxCandles ? rawAll.slice(rawAll.length - maxCandles) : rawAll;
@@ -85,14 +99,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       take: number;
     } | null = null;
 
-    const minBars = Math.max(30, Math.floor(60_000 / intervalToMs(interval)));
-    const stopLossPct = riskParams.stopLossPct ?? 2;
-    const takeProfitPct = riskParams.takeProfitPct ?? 4;
+    const minBars = Math.max(30, Math.floor(60_000 / intervalToMs(safeInterval)));
+    const stopLossPct = clamp(toNumber(riskParams.stopLossPct, 2), 0.1, 20);
+    const takeProfitPct = clamp(toNumber(riskParams.takeProfitPct, 4), 0.1, 50);
 
     for (let i = minBars; i < candles.length; i++) {
       const slice = candles.slice(0, i + 1);
       const closes = slice.map(c => c.close);
-      const signal = getStrategySignal(strategy, closes, strategyParams);
+      const signal = getStrategySignal(safeStrategy, closes, strategyParams);
       const bar = candles[i];
       const price = bar.close;
 
@@ -124,15 +138,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (!position && (signal.action === 'BUY' || signal.action === 'SELL')) {
         const positionSizePct = computePositionSizePct({
-          positionSizePct: riskParams.positionSizePct ?? 5,
+          positionSizePct: clamp(toNumber(riskParams.positionSizePct, 5), 0.1, 20),
           stopLossPct,
           takeProfitPct,
           maxDailyLossPct: 100,
           maxOpenPositions: 99,
           dynamicPositionSizing: riskParams.dynamicPositionSizing ?? false,
-          minPositionSizePct: riskParams.minPositionSizePct ?? 1,
-          maxPositionSizePct: riskParams.maxPositionSizePct ?? 10,
-          volatilityTargetPct: riskParams.volatilityTargetPct ?? 2,
+          minPositionSizePct: clamp(toNumber(riskParams.minPositionSizePct, 1), 0.1, 10),
+          maxPositionSizePct: clamp(toNumber(riskParams.maxPositionSizePct, 10), 0.5, 20),
+          volatilityTargetPct: clamp(toNumber(riskParams.volatilityTargetPct, 2), 0.2, 10),
         }, signal.score, signal.volatilityPct);
 
         const riskAmount = balance * (positionSizePct / 100);
@@ -153,7 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       symbol,
-      interval,
+      interval: safeInterval,
       days,
       trades,
       wins,

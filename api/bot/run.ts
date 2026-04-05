@@ -5,6 +5,11 @@ import { getStrategySignal } from '../_lib/strategy';
 import { TRUSTED_PAIRS } from '../_lib/trusted';
 
 const BOT_SECRET = process.env['BOT_SECRET'] ?? '';
+const LIVE_TRADING_ENABLED = process.env['LIVE_TRADING_ENABLED'] === 'true';
+const BOT_KILL_SWITCH = process.env['BOT_KILL_SWITCH'] === 'true';
+const ERROR_WEBHOOK_URL = process.env['ERROR_WEBHOOK_URL'] ?? '';
+const BINANCE_API_KEY = process.env['BINANCE_API_KEY'] ?? '';
+const BINANCE_API_SECRET = process.env['BINANCE_API_SECRET'] ?? '';
 
 function verifySecret(req: VercelRequest): boolean {
   if (!BOT_SECRET) return true; // No secret set - allow all (dev mode)
@@ -17,6 +22,27 @@ function inNoTradeWindow(startHour: number, endHour: number): boolean {
   const h = new Date().getUTCHours();
   if (startHour < endHour) return h >= startHour && h < endHour;
   return h >= startHour || h < endHour;
+}
+
+function toNumber(value: any, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
+
+function reportError(err: any, context: Record<string, any> = {}): void {
+  try {
+    console.error('Bot error:', err, context);
+    if (!ERROR_WEBHOOK_URL) return;
+    fetch(ERROR_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: String(err?.message ?? err), context, ts: Date.now() }),
+    }).catch(() => {});
+  } catch {}
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -49,14 +75,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       scanRotationSec = 60,
     } = config;
 
+    const safeTimeframes = new Set(['1m','5m','15m','30m','1h','4h','1d']);
+    const safeStrategies = new Set(['RSI','MACD','BOLLINGER','EMA','COMPOSITE']);
+    const safeTimeframe = safeTimeframes.has(String(timeframe)) ? String(timeframe) : '1h';
+    const safeStrategy = safeStrategies.has(String(strategy)) ? String(strategy) : 'COMPOSITE';
+
+    const safeRisk = {
+      positionSizePct: clamp(toNumber(riskParams.positionSizePct, 5), 0.1, 20),
+      stopLossPct: clamp(toNumber(riskParams.stopLossPct, 2), 0.1, 20),
+      takeProfitPct: clamp(toNumber(riskParams.takeProfitPct, 4), 0.1, 50),
+      maxDailyLossPct: clamp(toNumber(riskParams.maxDailyLossPct, 5), 1, 50),
+      maxOpenPositions: clamp(Math.floor(toNumber(riskParams.maxOpenPositions, 1)), 1, 10),
+      dynamicPositionSizing: riskParams.dynamicPositionSizing ?? false,
+      minPositionSizePct: clamp(toNumber(riskParams.minPositionSizePct, 1), 0.1, 10),
+      maxPositionSizePct: clamp(toNumber(riskParams.maxPositionSizePct, 10), 0.5, 20),
+      volatilityTargetPct: clamp(toNumber(riskParams.volatilityTargetPct, 2), 0.2, 10),
+      maxDrawdownPct: clamp(toNumber(riskParams.maxDrawdownPct, 12), 5, 80),
+      cooldownSec: clamp(toNumber(riskParams.cooldownSec, 90), 0, 3600),
+      noTradeStartHour: clamp(Math.floor(toNumber(riskParams.noTradeStartHour, 0)), 0, 23),
+      noTradeEndHour: clamp(Math.floor(toNumber(riskParams.noTradeEndHour, 0)), 0, 23),
+    };
+
+    const liveRequested = paperTrading === false;
+    if (liveRequested) {
+      if (BOT_KILL_SWITCH) {
+        return res.status(200).json({ action: 'BLOCKED', reason: 'Kill switch enabled', timestamp: Date.now() });
+      }
+      if (!LIVE_TRADING_ENABLED) {
+        return res.status(200).json({ action: 'BLOCKED', reason: 'Live trading disabled', timestamp: Date.now() });
+      }
+      if (!BOT_SECRET || !verifySecret(req)) {
+        return res.status(200).json({ action: 'BLOCKED', reason: 'Bot secret required', timestamp: Date.now() });
+      }
+      if (!BINANCE_API_KEY || !BINANCE_API_SECRET) {
+        return res.status(200).json({ action: 'BLOCKED', reason: 'Binance API keys missing', timestamp: Date.now() });
+      }
+    }
+
     const rawTrusted = Array.isArray(trustedPairs)
       ? trustedPairs
       : typeof trustedPairs === 'string'
         ? trustedPairs.split(',').map(s => s.trim()).filter(Boolean)
         : TRUSTED_PAIRS;
+    const safeScanTopN = clamp(Math.floor(toNumber(scanTopN, 3)), 1, 10);
+    const safeScanMinQuoteVolume = clamp(toNumber(scanMinQuoteVolume, 10_000_000), 1_000_000, 1_000_000_000);
+    const safeScanRotationSec = clamp(Math.floor(toNumber(scanRotationSec, 60)), 0, 600);
+    const safeScanEnabled = !!scanEnabled;
 
     const now = Date.now();
-    if (riskParams.maxDrawdownPct && maxDrawdownPct >= riskParams.maxDrawdownPct) {
+    if (safeRisk.maxDrawdownPct && maxDrawdownPct >= safeRisk.maxDrawdownPct) {
       return res.status(200).json({
         action: 'BLOCKED',
         reason: 'Max drawdown reached',
@@ -68,7 +135,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    if (riskParams.cooldownSec && lastClosedAt && (now - lastClosedAt) < riskParams.cooldownSec * 1000) {
+    if (safeRisk.cooldownSec && lastClosedAt && (now - lastClosedAt) < safeRisk.cooldownSec * 1000) {
       return res.status(200).json({
         action: 'BLOCKED',
         reason: 'Trade cooldown',
@@ -80,7 +147,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    if (inNoTradeWindow(riskParams.noTradeStartHour ?? 0, riskParams.noTradeEndHour ?? 0)) {
+    if (inNoTradeWindow(safeRisk.noTradeStartHour, safeRisk.noTradeEndHour)) {
       return res.status(200).json({
         action: 'BLOCKED',
         reason: 'No-trade window',
@@ -92,7 +159,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    if (trustedOnly && !rawTrusted.includes(pair) && !scanEnabled) {
+    if (trustedOnly && !rawTrusted.includes(pair) && !safeScanEnabled) {
       return res.status(200).json({
         action: 'BLOCKED',
         reason: 'Pair not in trusted list',
@@ -107,11 +174,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let selectedPair = pair;
     let signal = null as ReturnType<typeof getStrategySignal> | null;
 
-    if (scanEnabled) {
+    if (safeScanEnabled) {
       const candidates = trustedOnly ? rawTrusted : rawTrusted.length ? rawTrusted : [pair];
       const tickers = await getTickersBySymbols(candidates);
-      const lists = buildScanLists(tickers, scanMinQuoteVolume, scanTopN, scanRotationSec);
-      const best = await pickPairBySignal(lists, timeframe, strategy, strategyParams);
+      const lists = buildScanLists(tickers, safeScanMinQuoteVolume, safeScanTopN, safeScanRotationSec);
+      const best = await pickPairBySignal(lists, safeTimeframe, safeStrategy, strategyParams);
       if (best) {
         selectedPair = best.pair;
         signal = best.signal;
@@ -121,7 +188,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 1. Fetch candle history from Binance
-    const rawKlines = await getKlines(selectedPair, timeframe, 200);
+    const rawKlines = await getKlines(selectedPair, safeTimeframe, 200);
     const closes = rawKlines.map((k: number[]) => parseFloat(k[4].toString()));
 
     if (closes.length < 30) {
@@ -130,7 +197,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 2. Run strategy (selected in UI)
     if (!signal) {
-      signal = getStrategySignal(strategy, closes, strategyParams);
+      signal = getStrategySignal(safeStrategy as any, closes, strategyParams);
     }
     const indicators = signal.indicators;
 
@@ -155,20 +222,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const risk = checkRisk(
-      {
-        positionSizePct: riskParams.positionSizePct ?? 5,
-        stopLossPct: riskParams.stopLossPct ?? 2,
-        takeProfitPct: riskParams.takeProfitPct ?? 4,
-        maxDailyLossPct: riskParams.maxDailyLossPct ?? 5,
-        maxOpenPositions: riskParams.maxOpenPositions ?? 1,
-        dynamicPositionSizing: riskParams.dynamicPositionSizing ?? false,
-        minPositionSizePct: riskParams.minPositionSizePct ?? 1,
-        maxPositionSizePct: riskParams.maxPositionSizePct ?? 10,
-        volatilityTargetPct: riskParams.volatilityTargetPct ?? 2,
-      },
+      safeRisk,
       currentPrice,
       availableBalance,
-      openPositions,
+      clamp(Math.floor(toNumber(openPositions, 0)), 0, 50),
       dailyPnlPct,
       signal.action,
       signal.score,
@@ -212,6 +269,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         takeProfitPrice,
       };
     } else {
+      const openOrders = await getOpenOrders(selectedPair);
+      if (Array.isArray(openOrders) && openOrders.length > 0) {
+        return res.status(200).json({
+          action: 'BLOCKED',
+          reason: 'Open orders exist',
+          score: signal.score,
+          price: currentPrice,
+          indicators,
+          pair: selectedPair,
+          timestamp: Date.now(),
+        });
+      }
       const order = await placeOrder(selectedPair, signal.action, risk.positionSize!);
       trade = {
         id: tradeId,
@@ -243,7 +312,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
   } catch (err: any) {
-    console.error('Bot run error:', err);
+    reportError(err, { route: 'bot/run' });
     return res.status(500).json({ error: err.message ?? 'Internal error', timestamp: Date.now() });
   }
 }
