@@ -152,15 +152,25 @@ interface NavItem { path: string; label: string; icon: string; }
   `]
 })
 export class SidebarComponent {
-  navItems: NavItem[] = [
-    { path: '/dashboard', label: 'Dashboard',     icon: 'D' },
-    { path: '/chart',     label: 'Live Chart',    icon: 'C' },
-    { path: '/market',    label: 'Gainers/Losers',icon: 'M' },
-    { path: '/bot',       label: 'Bot Config',    icon: 'B' },
-    { path: '/trades',    label: 'Trade History', icon: 'T' },
-    { path: '/guide',     label: 'How It Works',  icon: 'G' },
-    { path: '/settings',  label: 'Settings',      icon: 'S' },
-  ];
+  get navItems(): NavItem[] {
+    const simple = this.config.config().simpleMode;
+    if (simple) {
+      return [
+        { path: '/dashboard', label: 'Dashboard',     icon: 'D' },
+        { path: '/bot',       label: 'Bot Config',    icon: 'B' },
+        { path: '/trades',    label: 'Trade History', icon: 'T' },
+      ];
+    }
+    return [
+      { path: '/dashboard', label: 'Dashboard',     icon: 'D' },
+      { path: '/chart',     label: 'Live Chart',    icon: 'C' },
+      { path: '/market',    label: 'Gainers/Losers',icon: 'M' },
+      { path: '/bot',       label: 'Bot Config',    icon: 'B' },
+      { path: '/trades',    label: 'Trade History', icon: 'T' },
+      { path: '/guide',     label: 'How It Works',  icon: 'G' },
+      { path: '/settings',  label: 'Settings',      icon: 'S' },
+    ];
+  }
 
   constructor(
     readonly bot: BotSchedulerService,

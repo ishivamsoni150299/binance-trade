@@ -325,12 +325,19 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
       </div>
 
       <!-- Bottom quick actions -->
-      <div class="bottom-bar">
-        <a routerLink="/chart" class="bb-btn">Live Chart</a>
-        <a routerLink="/bot" class="bb-btn">Bot Config</a>
-        <a routerLink="/trades" class="bb-btn">Trade History</a>
-        <a routerLink="/settings" class="bb-btn">Settings</a>
-      </div>
+      @if (config.config().simpleMode) {
+        <div class="bottom-bar">
+          <a routerLink="/bot" class="bb-btn">Bot Config</a>
+          <a routerLink="/trades" class="bb-btn">Trade History</a>
+        </div>
+      } @else {
+        <div class="bottom-bar">
+          <a routerLink="/chart" class="bb-btn">Live Chart</a>
+          <a routerLink="/bot" class="bb-btn">Bot Config</a>
+          <a routerLink="/trades" class="bb-btn">Trade History</a>
+          <a routerLink="/settings" class="bb-btn">Settings</a>
+        </div>
+      }
 
     </div>
   `,

@@ -19,20 +19,22 @@ interface TickerItem { symbol: string; price: string; changePct: number; }
       <app-sidebar />
       <div class="main-wrap">
         <!-- Top market ticker strip -->
-        <div class="market-strip">
-          <div class="strip-track">
-            @for (item of marketTickers(); track item.symbol) {
-              <div class="strip-item">
-                <span class="strip-sym">{{ item.symbol }}</span>
-                <span class="strip-price">{{ item.price }}</span>
-                <span class="strip-chg" [class.up]="item.changePct >= 0" [class.dn]="item.changePct < 0">
-                  {{ item.changePct >= 0 ? '+' : '' }}{{ item.changePct.toFixed(2) }}%
-                </span>
-              </div>
-              <span class="strip-sep">|</span>
-            }
+        @if (!config.config().simpleMode) {
+          <div class="market-strip">
+            <div class="strip-track">
+              @for (item of marketTickers(); track item.symbol) {
+                <div class="strip-item">
+                  <span class="strip-sym">{{ item.symbol }}</span>
+                  <span class="strip-price">{{ item.price }}</span>
+                  <span class="strip-chg" [class.up]="item.changePct >= 0" [class.dn]="item.changePct < 0">
+                    {{ item.changePct >= 0 ? '+' : '' }}{{ item.changePct.toFixed(2) }}%
+                  </span>
+                </div>
+                <span class="strip-sep">|</span>
+              }
+            </div>
           </div>
-        </div>
+        }
         <main class="main-content">
           <router-outlet />
         </main>
@@ -90,7 +92,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   constructor(
     private ws: BinanceWsService,
-    private config: ConfigService,
+    public config: ConfigService,
     private api: ApiService,
     private bot: BotSchedulerService,
     private tradeStore: TradeStoreService,
@@ -100,8 +102,10 @@ export class AppComponent implements OnInit, OnDestroy {
   async ngOnInit(): Promise<void> {
     await this.tradeStore.init();
     this.ws.connect(this.config.pair(), this.config.timeframe());
-    this.loadMarketTickers();
-    this.marketTimer = setInterval(() => this.loadMarketTickers(), 30000);
+    if (!this.config.config().simpleMode) {
+      this.loadMarketTickers();
+      this.marketTimer = setInterval(() => this.loadMarketTickers(), 30000);
+    }
     this.tryAutoStart();
   }
 
