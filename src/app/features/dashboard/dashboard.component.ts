@@ -6,6 +6,7 @@ import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
 import { TradeStoreService } from '../../core/services/trade-store.service';
 import { ConfigService } from '../../core/services/config.service';
 import { ApiService, WalletBalance, BacktestResult } from '../../core/services/api.service';
+import { CredentialsService } from '../../core/services/credentials.service';
 import { StatCardComponent } from '../../shared/components/stat-card.component';
 
 @Component({
@@ -595,7 +596,7 @@ export class DashboardComponent implements OnInit {
   backtestError = signal<string | null>(null);
   backtestResult = signal<BacktestResult | null>(null);
 
-  readonly walletIsPaper = computed(() => this.config.config().riskParams.paperTrading);
+  readonly walletIsPaper = computed(() => !this.creds.isLive());
 
   readonly walletUSDT = computed(() => {
     const usdt = this.walletBalances().find(b => b.asset === 'USDT' || b.asset === 'BUSD');
@@ -617,6 +618,7 @@ export class DashboardComponent implements OnInit {
     readonly tradeStore: TradeStoreService,
     readonly config: ConfigService,
     private api: ApiService,
+    private creds: CredentialsService,
   ) {}
 
   async ngOnInit(): Promise<void> {
@@ -629,16 +631,43 @@ export class DashboardComponent implements OnInit {
     this.walletLoading.set(true);
     this.walletError.set(null);
     try {
-      if (this.walletIsPaper()) {
+      if (!this.creds.isLive()) {
+        // Paper mode — show $10,000 simulated
         this.walletBalances.set([{ asset: 'USDT', free: 10000, locked: 0, total: 10000 }]);
         this.walletUpdatedAt.set(Date.now());
         return;
       }
-      const data = await this.api.getWalletBalances(force);
-      this.walletBalances.set(data.balances ?? []);
-      this.walletUpdatedAt.set(data.updatedAt ?? data.timestamp ?? Date.now());
-    } catch {
-      this.walletError.set('Could not load wallet balances. Check server env keys.');
+      // Live mode — fetch real balance directly from Binance in the browser
+      const HOSTS = ['https://api.binance.com', 'https://api1.binance.com', 'https://api2.binance.com'];
+      let lastErr = '';
+      for (const host of HOSTS) {
+        try {
+          const ts = Date.now();
+          const qs = `timestamp=${ts}`;
+          const sig = await this.creds.sign(qs);
+          const res = await fetch(`${host}/api/v3/account?${qs}&signature=${sig}`, {
+            headers: { 'X-MBX-APIKEY': this.creds.apiKey },
+            signal: AbortSignal.timeout(8000),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.msg ?? `HTTP ${res.status}`);
+          const balances: WalletBalance[] = (data.balances ?? [])
+            .filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
+            .map((b: any) => ({
+              asset: b.asset,
+              free: parseFloat(b.free),
+              locked: parseFloat(b.locked),
+              total: parseFloat(b.free) + parseFloat(b.locked),
+            }))
+            .sort((a: WalletBalance, b: WalletBalance) => b.total - a.total);
+          this.walletBalances.set(balances);
+          this.walletUpdatedAt.set(Date.now());
+          return;
+        } catch (e: any) { lastErr = e.message; }
+      }
+      throw new Error(lastErr);
+    } catch (e: any) {
+      this.walletError.set(this.creds.hasKeys() ? `Could not load balance: ${e.message}` : 'Add API keys in Settings to see live balance.');
     } finally {
       this.walletLoading.set(false);
     }

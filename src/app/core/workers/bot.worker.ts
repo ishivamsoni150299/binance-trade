@@ -4,6 +4,51 @@ let intervalId: ReturnType<typeof setInterval> | null = null;
 let config: any = null;
 let tickerCache: { key: string; ts: number; data: any[] } | null = null;
 
+// Live trading credentials — loaded from localStorage in worker context
+function getCredentials(): { apiKey: string; apiSecret: string; isLive: boolean } {
+  try {
+    const raw = (self as any).localStorage?.getItem?.('btrade_credentials');
+    if (raw) return { apiKey: '', apiSecret: '', isLive: false, ...JSON.parse(raw) };
+  } catch {}
+  return { apiKey: '', apiSecret: '', isLive: false };
+}
+
+async function signQuery(secret: string, queryString: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(queryString));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function binanceSigned(host: string, method: string, path: string, params: Record<string, string>, apiKey: string, apiSecret: string): Promise<any> {
+  const ts = Date.now();
+  const qs = new URLSearchParams({ ...params, timestamp: String(ts) }).toString();
+  const sig = await signQuery(apiSecret, qs);
+  const url = `${host}/api/v3${path}?${qs}&signature=${sig}`;
+  const res = await fetch(url, {
+    method,
+    headers: { 'X-MBX-APIKEY': apiKey, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: method === 'POST' ? `${qs}&signature=${sig}` : undefined,
+    signal: AbortSignal.timeout(10000),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.msg ?? `HTTP ${res.status}`);
+  return data;
+}
+
+async function placeLiveOrder(symbol: string, side: 'BUY' | 'SELL', quantity: number, apiKey: string, apiSecret: string): Promise<any> {
+  for (const host of BINANCE_HOSTS) {
+    try {
+      return await binanceSigned(host, 'POST', '/order', {
+        symbol, side, type: 'MARKET', quantity: quantity.toFixed(5),
+      }, apiKey, apiSecret);
+    } catch (e: any) {
+      if (e.message?.includes('HTTP 4')) throw e; // auth/param error — don't retry
+    }
+  }
+  throw new Error('All hosts failed for live order');
+}
+
 self.onmessage = (evt) => {
   const { type, payload } = evt.data;
 
@@ -551,35 +596,76 @@ async function runBotCycle(): Promise<void> {
       return;
     }
 
-    // Live mode: call Vercel API (server holds Binance API keys)
-    const response = await fetch('/api/bot/run', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Bot-Secret': config.botSecret ?? '',
-      },
-      body: JSON.stringify({
-        pair,
-        timeframe: config.timeframe,
-        strategy: config.strategy,
-        strategyParams: config.strategyParams,
-        riskParams: config.riskParams,
-        paperTrading: false,
-        openPositions: config.openPositions ?? 0,
-        dailyPnlPct: config.dailyPnlPct ?? 0,
-        maxDrawdownPct: config.maxDrawdownPct ?? 0,
-        lastClosedAt: config.lastClosedAt ?? 0,
-        trustedOnly: config.trustedOnly ?? true,
-        trustedPairs: config.trustedPairs ?? [],
-        scanEnabled: config.scanEnabled ?? true,
-        scanTopN: config.scanTopN ?? 3,
-        scanMinQuoteVolume: config.scanMinQuoteVolume ?? 10_000_000,
-        scanRotationSec: config.scanRotationSec ?? 60,
-      }),
-    });
+    // Live mode: run in browser, place orders directly to Binance (browser IPs not blocked)
+    const liveCreds = getCredentials();
+    if (!liveCreds.apiKey || !liveCreds.apiSecret) {
+      self.postMessage({ type: 'CYCLE_ERROR', error: 'Live mode requires API keys. Go to Settings to add them.' });
+      return;
+    }
 
-    const result = await response.json();
-    self.postMessage({ type: 'CYCLE_RESULT', result });
+    // Fetch klines directly from Binance
+    const rawKlines = await fetchKlines(pair ?? 'BTCUSDT', config.timeframe ?? '1h', 200);
+    const closes = rawKlines.map((k: any[]) => parseFloat(k[4]));
+    const currentPrice = closes[closes.length - 1];
+    const signal = computeSignal(config.strategy ?? 'COMPOSITE', closes, config.strategyParams);
+    const risk = config.riskParams ?? {};
+
+    // Risk guards
+    if ((config.openPositions ?? 0) >= (risk.maxOpenPositions ?? 1) && signal.action !== 'HOLD') {
+      self.postMessage({ type: 'CYCLE_RESULT', result: { action: 'BLOCKED', reason: 'Max open positions reached', score: signal.score, price: currentPrice, indicators: signal.indicators, pair, timestamp: Date.now() } });
+      return;
+    }
+    if ((config.dailyPnlPct ?? 0) <= -(risk.maxDailyLossPct ?? 5)) {
+      self.postMessage({ type: 'CYCLE_RESULT', result: { action: 'BLOCKED', reason: 'Daily loss limit reached', score: signal.score, price: currentPrice, indicators: signal.indicators, pair, timestamp: Date.now() } });
+      return;
+    }
+
+    let trade = null;
+    if (signal.action !== 'HOLD') {
+      const positionSizePct = risk.positionSizePct ?? 5;
+      const stopLossPct = risk.stopLossPct ?? 2;
+      const takeProfitPct = risk.takeProfitPct ?? 4;
+
+      // Get live balance
+      let balance = 77;
+      try {
+        for (const host of BINANCE_HOSTS) {
+          try {
+            const acc = await binanceSigned(host, 'GET', '/account', {}, liveCreds.apiKey, liveCreds.apiSecret);
+            const usdt = acc.balances?.find((b: any) => b.asset === 'USDT');
+            balance = parseFloat(usdt?.free ?? '77');
+            break;
+          } catch { /* try next */ }
+        }
+      } catch { /* use default */ }
+
+      const quantity = (balance * positionSizePct / 100) / currentPrice;
+      const stopLossPrice = signal.action === 'BUY' ? currentPrice * (1 - stopLossPct / 100) : currentPrice * (1 + stopLossPct / 100);
+      const takeProfitPrice = signal.action === 'BUY' ? currentPrice * (1 + takeProfitPct / 100) : currentPrice * (1 - takeProfitPct / 100);
+
+      // Place real order on Binance
+      const order = await placeLiveOrder(pair ?? 'BTCUSDT', signal.action, quantity, liveCreds.apiKey, liveCreds.apiSecret);
+
+      trade = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        pair: pair ?? 'BTCUSDT',
+        side: signal.action,
+        strategy: config.strategy ?? 'COMPOSITE',
+        entryPrice: parseFloat(order.fills?.[0]?.price ?? String(currentPrice)),
+        quantity: parseFloat(order.executedQty ?? String(quantity)),
+        fee: order.fills?.reduce((s: number, f: any) => s + parseFloat(f.commission ?? '0'), 0) ?? quantity * currentPrice * 0.001,
+        status: 'open',
+        openedAt: Date.now(),
+        isPaper: false,
+        signalScore: signal.score,
+        indicators: signal.indicators,
+        stopLossPrice,
+        takeProfitPrice,
+        binanceOrderId: order.orderId,
+      };
+    }
+
+    self.postMessage({ type: 'CYCLE_RESULT', result: { action: signal.action, score: signal.score, price: currentPrice, indicators: signal.indicators, pair, trade, timestamp: Date.now() } });
   } catch (err: any) {
     self.postMessage({ type: 'CYCLE_ERROR', error: err.message });
   }

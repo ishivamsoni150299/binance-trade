@@ -159,6 +159,7 @@ export class SidebarComponent {
         { path: '/dashboard', label: 'Dashboard',     icon: 'D' },
         { path: '/bot',       label: 'Bot Config',    icon: 'B' },
         { path: '/trades',    label: 'Trade History', icon: 'T' },
+        { path: '/settings',  label: 'Settings',      icon: 'S' },
       ];
     }
     return [
