@@ -7,6 +7,7 @@ import { TradeStoreService } from '../../core/services/trade-store.service';
 import { ConfigService } from '../../core/services/config.service';
 import { ApiService, WalletBalance, BacktestResult } from '../../core/services/api.service';
 import { CredentialsService } from '../../core/services/credentials.service';
+import { BinanceProxyService } from '../../core/services/binance-proxy.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { PriceAlertService, PriceAlert } from '../../core/services/price-alert.service';
 import { StatCardComponent } from '../../shared/components/stat-card.component';
@@ -890,6 +891,7 @@ export class DashboardComponent implements OnInit {
     readonly config: ConfigService,
     private api: ApiService,
     private creds: CredentialsService,
+    readonly proxy: BinanceProxyService,
     readonly notif: NotificationService,
     readonly priceAlerts: PriceAlertService,
   ) {}
@@ -969,31 +971,43 @@ export class DashboardComponent implements OnInit {
     this.walletLoading.set(true);
     this.walletError.set(null);
     try {
-      // Always try to read real balance from GitHub (written by bot every 5 min)
-      const res = await fetch(
-        'https://raw.githubusercontent.com/ishivamsoni150299/binance-trade/main/wallet.json?t=' + Date.now(),
-        { signal: AbortSignal.timeout(10000) }
-      );
-      if (!res.ok) throw new Error('wallet.json not found');
-      const data = await res.json();
-
-      // If bot is running live mode, wallet.json has isPaper=false with real balances
-      if (data.isPaper === false && Array.isArray(data.balances) && data.balances.length > 0) {
-        const balances: WalletBalance[] = data.balances
-          .map((b: any) => ({
-            asset: b.asset,
-            free: parseFloat(b.free ?? b.total ?? 0),
-            locked: parseFloat(b.locked ?? 0),
-            total: parseFloat(b.total ?? b.free ?? 0),
-          }))
-          .sort((a: WalletBalance, b: WalletBalance) => b.total - a.total);
-        this.walletBalances.set(balances);
-        this.walletIsPaper.set(false);
-        this.walletUpdatedAt.set(data.updatedAt ?? Date.now());
-        return;
+      // Priority 1: Cloudflare Worker — real Binance balance (live API call)
+      if (this.creds.useProxy) {
+        await this.proxy.fetchBalance();
+        if (this.proxy.balances().length > 0) {
+          this.walletBalances.set(this.proxy.balances());
+          this.walletIsPaper.set(false);
+          this.walletUpdatedAt.set(this.proxy.lastFetch());
+          return;
+        }
+        if (this.proxy.error()) {
+          this.walletError.set('Proxy error: ' + this.proxy.error());
+        }
       }
 
-      // Bot is in paper mode — check if user has manually entered balance
+      // Priority 2: wallet.json from GitHub (written by bot every 5 min)
+      try {
+        const res = await fetch(
+          'https://raw.githubusercontent.com/ishivamsoni150299/binance-trade/main/wallet.json?t=' + Date.now(),
+          { signal: AbortSignal.timeout(8000) }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isPaper === false && Array.isArray(data.balances) && data.balances.length > 0) {
+            this.walletBalances.set(data.balances.map((b: any) => ({
+              asset: b.asset,
+              free: parseFloat(b.free ?? 0),
+              locked: parseFloat(b.locked ?? 0),
+              total: parseFloat(b.total ?? b.free ?? 0),
+            })).sort((a: WalletBalance, b: WalletBalance) => b.total - a.total));
+            this.walletIsPaper.set(false);
+            this.walletUpdatedAt.set(data.updatedAt ?? Date.now());
+            return;
+          }
+        }
+      } catch { /* ignore */ }
+
+      // Priority 3: manually entered balance
       const manual = this.manualBalance();
       if (manual && manual > 0) {
         this.walletBalances.set([{ asset: 'USDT', free: manual, locked: 0, total: manual }]);
@@ -1002,21 +1016,11 @@ export class DashboardComponent implements OnInit {
         return;
       }
 
-      // Paper mode fallback
+      // Fallback: paper mode
       this.walletBalances.set([{ asset: 'USDT', free: 10000, locked: 0, total: 10000 }]);
       this.walletIsPaper.set(true);
-      this.walletUpdatedAt.set(data.updatedAt ?? Date.now());
+      this.showManualEntry.set(true);
 
-    } catch {
-      // GitHub fetch failed — use manual balance if set
-      const manual = this.manualBalance();
-      if (manual && manual > 0) {
-        this.walletBalances.set([{ asset: 'USDT', free: manual, locked: 0, total: manual }]);
-        this.walletIsPaper.set(false);
-      } else {
-        this.walletError.set('Enter your Binance balance below to see it here.');
-        this.showManualEntry.set(true);
-      }
     } finally {
       this.walletLoading.set(false);
     }

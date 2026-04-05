@@ -85,13 +85,50 @@ type SetupStep = 'idle' | 'running' | 'done' | 'error';
             </div>
           </div>
 
-          <!-- Step 3: GitHub token -->
+          <!-- Step 3: Cloudflare Worker URL -->
           <div class="setup-step">
             <div class="step-num">3</div>
             <div class="step-body">
               <div class="step-title">
+                Cloudflare Worker URL
+                <span class="step-hint">Proxy that lets the app reach your real Binance balance</span>
+                @if (creds.hasWorker()) { <span class="badge-ok">Connected</span> }
+              </div>
+              <div class="input-row">
+                <input class="setup-input" type="url"
+                  placeholder="https://binance-proxy.yourname.workers.dev"
+                  [ngModel]="workerUrl()" (ngModelChange)="workerUrl.set($event)"
+                  autocomplete="off" spellcheck="false" />
+                <button class="btn-vis btn-test" (click)="testWorker()"
+                  [disabled]="!workerUrl().trim() || workerTesting()">
+                  {{ workerTesting() ? '...' : 'Test' }}
+                </button>
+              </div>
+              @if (workerStatus()) {
+                <div class="worker-status" [class.ok]="workerOk()" [class.fail]="!workerOk()">
+                  {{ workerStatus() }}
+                </div>
+              }
+              <div class="token-hint">
+                <strong>Setup (free, 2 min):</strong><br>
+                1. Create free account at <strong>cloudflare.com</strong><br>
+                2. In your terminal: <code>npm install -g wrangler</code><br>
+                3. <code>wrangler login</code><br>
+                4. <code>wrangler secret put BINANCE_API_KEY</code> → paste your key<br>
+                5. <code>wrangler secret put BINANCE_API_SECRET</code> → paste your secret<br>
+                6. <code>wrangler deploy</code> → copy the URL shown<br>
+                7. Paste the URL above and click Test
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 4: GitHub token -->
+          <div class="setup-step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">
                 GitHub Token
-                <span class="step-hint">Used once to auto-configure your bot</span>
+                <span class="step-hint">Used once to configure the always-on bot</span>
               </div>
               <div class="input-row">
                 <input class="setup-input" [type]="showToken() ? 'text' : 'password'"
@@ -104,14 +141,14 @@ type SetupStep = 'idle' | 'running' | 'done' | 'error';
                 Get GitHub Token →
               </button>
               <div class="token-hint">
-                When creating the token: select <strong>repo</strong> scope only. Token is used once and never stored.
+                When creating the token: select <strong>repo</strong> scope only.
               </div>
             </div>
           </div>
 
-          <!-- Step 4: Pair & Timeframe -->
+          <!-- Step 5: Pair & Timeframe -->
           <div class="setup-step">
-            <div class="step-num">4</div>
+            <div class="step-num">5</div>
             <div class="step-body">
               <div class="step-title">Trading Pair &amp; Timeframe</div>
               <div class="pair-row">
@@ -137,9 +174,9 @@ type SetupStep = 'idle' | 'running' | 'done' | 'error';
             </div>
           </div>
 
-          <!-- Step 5: Risk Settings -->
+          <!-- Step 6: Risk Settings -->
           <div class="setup-step">
-            <div class="step-num">5</div>
+            <div class="step-num">6</div>
             <div class="step-body">
               <div class="step-title">Risk Settings
                 @if (!isLive()) { <span class="step-hint">Applies when you switch to live</span> }
@@ -316,7 +353,14 @@ type SetupStep = 'idle' | 'running' | 'done' | 'error';
       border: 1px solid var(--blue); background: rgba(59,130,246,0.08);
       color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700;
     }
-    .token-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+    .token-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.7; }
+    .token-hint code { background: var(--bg-hover); padding: 1px 5px; border-radius: 4px; font-family: monospace; font-size: 11px; }
+    .btn-test { background: var(--bg-hover) !important; color: var(--text-secondary) !important; min-width: 52px; }
+    .worker-status {
+      font-size: 12px; padding: 6px 10px; border-radius: 6px; margin-top: 4px; font-weight: 600;
+    }
+    .worker-status.ok   { background: rgba(38,166,154,0.1); color: var(--green); }
+    .worker-status.fail { background: rgba(239,83,80,0.1);  color: var(--red); }
 
     /* Pair & timeframe */
     .pair-row { display: flex; gap: 20px; flex-wrap: wrap; }
@@ -426,12 +470,20 @@ export class SettingsComponent {
   stopLossPct     = signal(1.5);
   takeProfitPct   = signal(3);
 
+  // Worker proxy — read initial value from localStorage directly (creds not ready at field init)
+  workerUrl     = signal(SettingsComponent.loadWorkerUrl());
+  workerTesting = signal(false);
+  workerStatus  = signal('');
+  workerOk      = signal(false);
+
   // Setup state
   setupStep  = signal<SetupStep>('idle');
   setupError = signal('');
 
+  // Require API keys + at least one of: worker URL or github token
   readonly canSetup = computed(() =>
-    !!this.apiKey().trim() && !!this.apiSecret().trim() && !!this.githubToken().trim()
+    !!this.apiKey().trim() && !!this.apiSecret().trim() &&
+    (!!this.githubToken().trim() || !!this.workerUrl().trim())
   );
 
   readonly balanceHint    = computed(() => this.isLive() ? '$77 USDT' : '$10,000 simulated');
@@ -453,6 +505,13 @@ export class SettingsComponent {
     private bot: BotSchedulerService,
   ) {}
 
+  static loadWorkerUrl(): string {
+    try {
+      const raw = localStorage.getItem('btrade_credentials');
+      return raw ? (JSON.parse(raw).workerUrl ?? '') : '';
+    } catch { return ''; }
+  }
+
   cfg() { return this.config.config(); }
 
   openTokenPage(): void {
@@ -460,6 +519,30 @@ export class SettingsComponent {
       'https://github.com/settings/tokens/new?scopes=repo&description=BTrader+Bot+Setup',
       '_blank'
     );
+  }
+
+  async testWorker(): Promise<void> {
+    const url = this.workerUrl().trim().replace(/\/$/, '');
+    if (!url) return;
+    this.workerTesting.set(true);
+    this.workerStatus.set('');
+    try {
+      const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(8000) });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        this.workerOk.set(true);
+        this.workerStatus.set('Connected! Worker is healthy.');
+        this.creds.save({ workerUrl: url });
+        this.workerUrl.set(url);
+      } else {
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+    } catch (e: any) {
+      this.workerOk.set(false);
+      this.workerStatus.set('Failed: ' + (e.message ?? 'Could not reach worker'));
+    } finally {
+      this.workerTesting.set(false);
+    }
   }
 
   async runSetup(): Promise<void> {
@@ -490,6 +573,7 @@ export class SettingsComponent {
         apiKey:    this.apiKey().trim(),
         apiSecret: this.apiSecret().trim(),
         isLive:    this.isLive(),
+        workerUrl: this.workerUrl().trim(),
       });
       this.config.updateRisk({ paperTrading: !this.isLive() });
 
