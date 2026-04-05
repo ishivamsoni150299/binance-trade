@@ -95,8 +95,8 @@ import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
           <button class="btn-save" (click)="saveKeys()" [disabled]="!apiKeyInput || !apiSecretInput">
             Save API Keys
           </button>
-          <button class="btn-test" (click)="testConnection()" [disabled]="!creds.hasKeys() || testing()">
-            {{ testing() ? 'Testing...' : 'Test Connection' }}
+          <button class="btn-test" (click)="testConnection()" [disabled]="testing()">
+            {{ testing() ? 'Loading...' : 'Check Bot Wallet' }}
           </button>
         </div>
 
@@ -107,13 +107,30 @@ import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
         }
 
         <div class="key-instructions">
-          <div class="ki-title">How to create an API key on Binance:</div>
+          <div class="ki-title">How it works — important to understand:</div>
+          <div class="arch-box">
+            <div class="arch-row">
+              <span class="arch-tag ok">GitHub Actions</span>
+              <span class="arch-desc">Runs your bot every 5 min → places real Binance orders → saves balance to wallet.json</span>
+            </div>
+            <div class="arch-row">
+              <span class="arch-tag ok">Browser</span>
+              <span class="arch-desc">Shows live prices + signals + reads wallet.json from GitHub</span>
+            </div>
+            <div class="arch-row">
+              <span class="arch-tag bad">Vercel</span>
+              <span class="arch-desc">Blocked by Binance (error 451) — cannot place orders</span>
+            </div>
+          </div>
+          <div class="ki-title" style="margin-top:12px">Setup steps:</div>
           <ol class="ki-steps">
-            <li>Go to <strong>Binance.com → Profile → API Management</strong></li>
-            <li>Click <strong>Create API</strong> → choose <strong>System Generated</strong></li>
-            <li>Enable ONLY <strong>"Enable Spot & Margin Trading"</strong></li>
-            <li><strong>NEVER enable withdrawals</strong> — not needed for trading</li>
-            <li>Copy both keys and paste above</li>
+            <li>Go to <strong>Binance → Profile → API Management</strong> → Create API key</li>
+            <li>Enable only <strong>"Enable Spot & Margin Trading"</strong> — never withdrawals</li>
+            <li>Go to your <strong>GitHub repo → Settings → Secrets → Actions</strong></li>
+            <li>Add secret <strong>BINANCE_API_KEY</strong> and <strong>BINANCE_API_SECRET</strong></li>
+            <li>Go to <strong>GitHub repo → Settings → Variables → Actions</strong></li>
+            <li>Set <strong>BOT_PAPER_TRADING = false</strong> to enable live trading</li>
+            <li>Click <strong>"Test Connection"</strong> below to verify the bot has run successfully</li>
           </ol>
         </div>
       </div>
@@ -345,6 +362,15 @@ import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
     .ki-steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
     .ki-steps li { font-size: 12px; color: var(--text-secondary); }
     .ki-steps strong { color: var(--text-primary); }
+    .arch-box { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .arch-row { display: flex; align-items: flex-start; gap: 10px; }
+    .arch-tag {
+      font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 6px;
+      white-space: nowrap; flex-shrink: 0; margin-top: 1px;
+    }
+    .arch-tag.ok { background: rgba(38,166,154,0.15); color: var(--green); border: 1px solid rgba(38,166,154,0.3); }
+    .arch-tag.bad { background: rgba(239,83,80,0.1); color: var(--red); border: 1px solid rgba(239,83,80,0.3); }
+    .arch-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
 
     /* Risk grid */
     .risk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
@@ -491,25 +517,27 @@ export class SettingsComponent {
     this.testing.set(true);
     this.testResult.set(null);
     try {
-      // Use Vercel proxy — avoids CORS. Keys must be set in Vercel env vars.
-      const res = await fetch('/api/wallet/balances', { signal: AbortSignal.timeout(10000) });
+      // Read wallet.json committed by GitHub Actions bot (not blocked by Binance)
+      const res = await fetch(
+        'https://raw.githubusercontent.com/ishivamsoni150299/binance-trade/main/wallet.json?t=' + Date.now(),
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (!res.ok) throw new Error(`Could not load wallet.json from GitHub (HTTP ${res.status})`);
       const data = await res.json();
 
-      if (!res.ok || data.error) {
-        throw new Error(data.error ?? `HTTP ${res.status}`);
-      }
-
       const usdt = (data.balances ?? []).find((b: any) => b.asset === 'USDT');
-      const bal = usdt ? parseFloat(usdt.free ?? usdt.total) : 0;
+      const bal = usdt ? parseFloat(usdt.total ?? usdt.free) : 0;
+      const isPaper = data.isPaper ?? true;
+      const updatedAgo = data.updatedAt ? Math.round((Date.now() - data.updatedAt) / 60000) : null;
+
       this.liveBalance.set(bal);
-      this.testResult.set(`Connected! Your USDT balance: $${bal.toFixed(2)}`);
+      this.testResult.set(
+        `${isPaper ? 'Paper' : 'Live'} wallet loaded — USDT: $${bal.toFixed(2)}` +
+        (updatedAgo !== null ? ` (updated ${updatedAgo}m ago by bot)` : '')
+      );
       this.testSuccess.set(true);
     } catch (e: any) {
-      let msg = e.message ?? 'Unknown error';
-      if (msg.includes('fetch') || msg.includes('network')) {
-        msg = 'Network error — make sure BINANCE_API_KEY and BINANCE_API_SECRET are set in your Vercel project environment variables.';
-      }
-      this.testResult.set(`Failed: ${msg}`);
+      this.testResult.set(`Failed: ${e.message ?? 'Unknown error'}`);
       this.testSuccess.set(false);
     } finally {
       this.testing.set(false);

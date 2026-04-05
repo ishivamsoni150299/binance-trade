@@ -915,10 +915,13 @@ export class DashboardComponent implements OnInit {
         this.walletUpdatedAt.set(Date.now());
         return;
       }
-      // Live mode — use Vercel proxy (avoids browser CORS restriction on Binance signed API)
-      const res = await fetch('/api/wallet/balances', { signal: AbortSignal.timeout(10000) });
+      // Live mode — read wallet.json written by GitHub Actions bot (Vercel/browser both blocked by Binance 451)
+      const res = await fetch(
+        'https://raw.githubusercontent.com/ishivamsoni150299/binance-trade/main/wallet.json?t=' + Date.now(),
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (!res.ok) throw new Error('Could not load wallet from GitHub');
       const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
       const balances: WalletBalance[] = (data.balances ?? [])
         .map((b: any) => ({
           asset: b.asset,
@@ -928,7 +931,7 @@ export class DashboardComponent implements OnInit {
         }))
         .sort((a: WalletBalance, b: WalletBalance) => b.total - a.total);
       this.walletBalances.set(balances);
-      this.walletUpdatedAt.set(data.timestamp ?? Date.now());
+      this.walletUpdatedAt.set(data.updatedAt ?? Date.now());
     } catch (e: any) {
       this.walletError.set(this.creds.hasKeys() ? `Could not load balance: ${e.message}` : 'Add API keys in Settings to see live balance.');
     } finally {
