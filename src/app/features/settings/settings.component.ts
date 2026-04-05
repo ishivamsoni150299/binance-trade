@@ -109,35 +109,64 @@ type SetupStep = 'idle' | 'running' | 'done' | 'error';
             </div>
           </div>
 
-          <!-- Risk (only for live) -->
-          @if (isLive()) {
-            <div class="setup-step">
-              <div class="step-num">4</div>
-              <div class="step-body">
-                <div class="step-title">Risk Settings <span class="step-hint">Safe defaults pre-filled for $77 USDT</span></div>
-                <div class="risk-row">
-                  <div class="risk-item">
-                    <label>Position Size</label>
-                    <div class="risk-val">{{ positionSizePct() }}% = ~{{ positionDollar() }}</div>
-                    <input type="range" min="10" max="30" step="1" class="slider"
-                      [ngModel]="positionSizePct()" (ngModelChange)="positionSizePct.set(+$event)" />
-                  </div>
-                  <div class="risk-item">
-                    <label>Stop Loss</label>
-                    <div class="risk-val red">{{ stopLossPct() }}%</div>
-                    <input type="range" min="0.5" max="5" step="0.5" class="slider red"
-                      [ngModel]="stopLossPct()" (ngModelChange)="stopLossPct.set(+$event)" />
-                  </div>
-                  <div class="risk-item">
-                    <label>Take Profit</label>
-                    <div class="risk-val green">{{ takeProfitPct() }}%</div>
-                    <input type="range" min="1" max="10" step="0.5" class="slider green"
-                      [ngModel]="takeProfitPct()" (ngModelChange)="takeProfitPct.set(+$event)" />
+          <!-- Step 4: Pair & Timeframe -->
+          <div class="setup-step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Trading Pair &amp; Timeframe</div>
+              <div class="pair-row">
+                <div class="pair-group">
+                  <label>Pair</label>
+                  <select class="setup-select"
+                    [ngModel]="botPair()" (ngModelChange)="botPair.set($event)">
+                    @for (p of pairOptions; track p) {
+                      <option [value]="p">{{ p }}</option>
+                    }
+                  </select>
+                </div>
+                <div class="pair-group">
+                  <label>Timeframe</label>
+                  <div class="tf-row">
+                    @for (tf of timeframeOptions; track tf) {
+                      <button class="tf-btn" [class.active]="botTimeframe() === tf"
+                        (click)="botTimeframe.set(tf)">{{ tf }}</button>
+                    }
                   </div>
                 </div>
               </div>
             </div>
-          }
+          </div>
+
+          <!-- Step 5: Risk Settings -->
+          <div class="setup-step">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <div class="step-title">Risk Settings
+                @if (!isLive()) { <span class="step-hint">Applies when you switch to live</span> }
+              </div>
+              <div class="risk-row">
+                <div class="risk-item">
+                  <label>Position Size</label>
+                  <div class="risk-val">{{ positionSizePct() }}%</div>
+                  <input type="range" min="5" max="50" step="1" class="slider"
+                    [ngModel]="positionSizePct()" (ngModelChange)="positionSizePct.set(+$event)" />
+                  <div class="risk-sub">{{ positionDollar() }} per trade</div>
+                </div>
+                <div class="risk-item">
+                  <label>Stop Loss</label>
+                  <div class="risk-val red">-{{ stopLossPct() }}%</div>
+                  <input type="range" min="0.5" max="10" step="0.5" class="slider red"
+                    [ngModel]="stopLossPct()" (ngModelChange)="stopLossPct.set(+$event)" />
+                </div>
+                <div class="risk-item">
+                  <label>Take Profit</label>
+                  <div class="risk-val green">+{{ takeProfitPct() }}%</div>
+                  <input type="range" min="1" max="20" step="0.5" class="slider green"
+                    [ngModel]="takeProfitPct()" (ngModelChange)="takeProfitPct.set(+$event)" />
+                </div>
+              </div>
+            </div>
+          </div>
 
           <!-- Setup button -->
           <button class="btn-setup" (click)="runSetup()"
@@ -145,7 +174,7 @@ type SetupStep = 'idle' | 'running' | 'done' | 'error';
             @if (setupStep() === 'running') {
               <span class="spinner"></span> Configuring everything...
             } @else {
-              {{ isLive() ? 'Connect & Start Live Trading' : 'Connect & Start Paper Trading' }}
+              {{ isLive() ? 'Connect & Start Live Trading' : 'Connect & Start Paper Trading' }} — {{ botPair() }} {{ botTimeframe() }}
             }
           </button>
 
@@ -289,11 +318,29 @@ type SetupStep = 'idle' | 'running' | 'done' | 'error';
     }
     .token-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 
+    /* Pair & timeframe */
+    .pair-row { display: flex; gap: 20px; flex-wrap: wrap; }
+    .pair-group { display: flex; flex-direction: column; gap: 6px; }
+    .setup-select {
+      padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-primary); font-size: 13px;
+      font-weight: 600; outline: none; cursor: pointer; min-width: 140px;
+    }
+    .setup-select:focus { border-color: var(--blue); }
+    .tf-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tf-btn {
+      padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg-hover); color: var(--text-secondary); cursor: pointer;
+      font-size: 12px; font-weight: 600; transition: all 0.15s;
+    }
+    .tf-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+
     /* Risk */
     .risk-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
     .risk-item { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
     label { display: block; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
     .risk-val { font-size: 20px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px; }
+    .risk-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
     .risk-val.red { color: var(--red); }
     .risk-val.green { color: var(--green); }
     .slider { width: 100%; accent-color: var(--blue); cursor: pointer; }
@@ -367,6 +414,13 @@ export class SettingsComponent {
   showToken   = signal(false);
   isLive      = signal(false);
 
+  // Pair & timeframe
+  botPair      = signal('BTCUSDT');
+  botTimeframe = signal('1h');
+
+  readonly pairOptions = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'DOTUSDT'];
+  readonly timeframeOptions = ['15m', '30m', '1h', '2h', '4h', '1d'];
+
   // Risk
   positionSizePct = signal(15);
   stopLossPct     = signal(1.5);
@@ -381,7 +435,10 @@ export class SettingsComponent {
   );
 
   readonly balanceHint    = computed(() => this.isLive() ? '$77 USDT' : '$10,000 simulated');
-  readonly positionDollar = computed(() => '$' + (77 * this.positionSizePct() / 100).toFixed(2));
+  readonly positionDollar = computed(() => {
+    const base = this.isLive() ? 77 : 10000;
+    return '$' + (base * this.positionSizePct() / 100).toFixed(2);
+  });
 
   readonly intervalOptions = [
     { value: 15,  label: '15s' },
@@ -420,6 +477,8 @@ export class SettingsComponent {
           positionSizePct: this.positionSizePct(),
           stopLossPct:     this.stopLossPct(),
           takeProfitPct:   this.takeProfitPct(),
+          botPair:         this.botPair(),
+          botTimeframe:    this.botTimeframe(),
         }),
       });
 

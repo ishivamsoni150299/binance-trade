@@ -55,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { githubToken, binanceApiKey, binanceApiSecret, paperTrading, positionSizePct, stopLossPct, takeProfitPct } = req.body ?? {};
+  const { githubToken, binanceApiKey, binanceApiSecret, paperTrading, positionSizePct, stopLossPct, takeProfitPct, botPair, botTimeframe } = req.body ?? {};
 
   if (!githubToken) return res.status(400).json({ error: 'githubToken is required' });
 
@@ -82,8 +82,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await setVariable(githubToken, 'BOT_POSITION_SIZE_PCT',  String(positionSizePct  ?? 15));
     await setVariable(githubToken, 'BOT_STOP_LOSS_PCT',      String(stopLossPct      ?? 1.5));
     await setVariable(githubToken, 'BOT_TAKE_PROFIT_PCT',    String(takeProfitPct    ?? 3));
-    await setVariable(githubToken, 'BOT_PAIR',               'BTCUSDT');
-    await setVariable(githubToken, 'BOT_TIMEFRAME',          '1h');
+    await setVariable(githubToken, 'BOT_PAIR',               botPair      ?? 'BTCUSDT');
+    await setVariable(githubToken, 'BOT_TIMEFRAME',          botTimeframe ?? '1h');
 
     // 4. Trigger workflow immediately
     try {
