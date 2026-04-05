@@ -1,6 +1,7 @@
 import { Injectable, signal, OnDestroy, effect } from '@angular/core';
 import { ConfigService } from './config.service';
 import { TradeStoreService } from './trade-store.service';
+import { NotificationService } from './notification.service';
 import { Trade } from '../models/types';
 
 export interface CycleResult {
@@ -26,6 +27,7 @@ export class BotSchedulerService implements OnDestroy {
   constructor(
     private config: ConfigService,
     private tradeStore: TradeStoreService,
+    private notif: NotificationService,
   ) {
     effect(() => {
       const cfg = this.config.config();
@@ -84,7 +86,12 @@ export class BotSchedulerService implements OnDestroy {
       this.cycleCount.update(n => n + 1);
 
       if (msg.result.trade) {
-        await this.tradeStore.addTrade(msg.result.trade as Trade);
+        const trade = msg.result.trade as Trade;
+        await this.tradeStore.addTrade(trade);
+        this.notif.tradePlaced(trade.side, trade.pair, trade.entryPrice, trade.isPaper);
+      }
+      if (msg.result.action === 'BLOCKED' && msg.result.reason?.includes('Daily loss')) {
+        this.notif.dailyLimitReached(this.tradeStore.dailyPnl());
       }
     } else if (msg.type === 'CYCLE_ERROR') {
       this.lastError.set(msg.error ?? 'Unknown error');

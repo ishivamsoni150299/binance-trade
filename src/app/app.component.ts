@@ -7,6 +7,8 @@ import { ApiService } from './core/services/api.service';
 import { BotSchedulerService } from './core/services/bot-scheduler.service';
 import { TradeStoreService } from './core/services/trade-store.service';
 import { PositionMonitorService } from './core/services/position-monitor.service';
+import { NotificationService } from './core/services/notification.service';
+import { PriceAlertService } from './core/services/price-alert.service';
 
 interface TickerItem { symbol: string; price: string; changePct: number; }
 
@@ -97,7 +99,10 @@ export class AppComponent implements OnInit, OnDestroy {
     private bot: BotSchedulerService,
     private tradeStore: TradeStoreService,
     private _positionMonitor: PositionMonitorService,
+    private _notif: NotificationService,
+    private _priceAlerts: PriceAlertService,
   ) {}
+
 
   async ngOnInit(): Promise<void> {
     await this.tradeStore.init();

@@ -7,12 +7,15 @@ import { TradeStoreService } from '../../core/services/trade-store.service';
 import { ConfigService } from '../../core/services/config.service';
 import { ApiService, WalletBalance, BacktestResult } from '../../core/services/api.service';
 import { CredentialsService } from '../../core/services/credentials.service';
+import { NotificationService } from '../../core/services/notification.service';
+import { PriceAlertService, PriceAlert } from '../../core/services/price-alert.service';
 import { StatCardComponent } from '../../shared/components/stat-card.component';
+import { FormsModule } from '@angular/forms';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [StatCardComponent, RouterLink, DatePipe],
+  imports: [StatCardComponent, RouterLink, DatePipe, FormsModule],
   template: `
     <div class="page">
 
@@ -31,6 +34,17 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
           <span class="tf-chip">{{ config.timeframe() }}</span>
           @if (config.config().scanEnabled) {
             <span class="scan-chip">Auto Pair</span>
+          }
+          <!-- Notification bell -->
+          <button class="notif-bell" (click)="toggleNotifPanel()" [class.has-unread]="notif.unreadCount() > 0">
+            <span class="bell-icon">N</span>
+            @if (notif.unreadCount() > 0) {
+              <span class="bell-badge">{{ notif.unreadCount() }}</span>
+            }
+          </button>
+          <!-- Enable notifications button -->
+          @if (notif.permission() === 'default') {
+            <button class="btn-enable-notif" (click)="enableNotifications()">Enable Alerts</button>
           }
         </div>
       </div>
@@ -325,11 +339,134 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
         }
       </div>
 
+      <!-- Notification panel + Price alerts + Portfolio -->
+      <div class="bottom-grid">
+
+        <!-- Notification inbox -->
+        <div class="panel notif-panel">
+          <div class="panel-header">
+            <span class="panel-title">Notifications</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              @if (notif.permission() === 'default') {
+                <button class="btn-enable-notif" (click)="enableNotifications()">Enable Push</button>
+              }
+              @if (notif.permission() === 'granted') {
+                <span class="push-on">Push ON</span>
+              }
+              @if (notif.inbox().length > 0) {
+                <button class="refresh-btn" (click)="notif.markAllRead()">Clear</button>
+              }
+            </div>
+          </div>
+          @if (notif.inbox().length === 0) {
+            <div class="notif-empty">No notifications yet. Notifications appear when bot trades or price alerts trigger.</div>
+          } @else {
+            <div class="notif-list">
+              @for (n of notif.inbox().slice(0, 8); track n.id) {
+                <div class="notif-row" [class.unread]="!n.read" [class]="'nt-' + n.type">
+                  <div class="nr-icon">
+                    @if (n.type === 'tp') { P }
+                    @else if (n.type === 'sl') { S }
+                    @else if (n.type === 'buy') { B }
+                    @else if (n.type === 'sell') { V }
+                    @else { A }
+                  </div>
+                  <div class="nr-body">
+                    <div class="nr-title">{{ n.title }}</div>
+                    <div class="nr-sub">{{ n.body }}</div>
+                  </div>
+                  <div class="nr-time">{{ n.ts | date:'HH:mm' }}</div>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Price Alerts -->
+        <div class="panel alerts-panel">
+          <div class="panel-header">
+            <span class="panel-title">Price Alerts</span>
+            @if (priceAlerts.alerts().length > 0) {
+              <button class="refresh-btn" (click)="priceAlerts.clearTriggered()">Clear Done</button>
+            }
+          </div>
+          <!-- Add alert form -->
+          <div class="alert-form">
+            <select class="alert-dir" [value]="alertDirection()"
+              (change)="alertDirection.set(($any($event.target)).value)">
+              <option value="above">Above</option>
+              <option value="below">Below</option>
+            </select>
+            <input type="number" class="alert-input" placeholder="Target price"
+              [value]="alertPrice()"
+              (input)="alertPrice.set(($any($event.target)).value)" />
+            <button class="btn-add-alert" (click)="addAlert()">+ Add</button>
+          </div>
+          @if (priceAlerts.alerts().length === 0) {
+            <div class="notif-empty">No alerts set. Set a price target above.</div>
+          } @else {
+            <div class="notif-list">
+              @for (a of priceAlerts.alerts(); track a.id) {
+                <div class="notif-row" [class.triggered]="a.triggered">
+                  <div class="nr-icon" [class.up]="a.direction === 'above'" [class.dn]="a.direction === 'below'">
+                    {{ a.direction === 'above' ? 'H' : 'L' }}
+                  </div>
+                  <div class="nr-body">
+                    <div class="nr-title">{{ a.pair }} {{ a.direction }} \${{ a.targetPrice.toLocaleString() }}</div>
+                    <div class="nr-sub">{{ a.triggered ? 'Triggered' : 'Watching...' }}</div>
+                  </div>
+                  <button class="nr-del" (click)="priceAlerts.remove(a.id)">x</button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Portfolio breakdown -->
+        <div class="panel portfolio-panel">
+          <div class="panel-header">
+            <span class="panel-title">Portfolio</span>
+            <span class="panel-time">{{ walletIsPaper() ? 'Paper' : 'Live' }}</span>
+          </div>
+          @if (walletBalances().length === 0) {
+            <div class="notif-empty">No assets. Start bot or add API keys in Settings.</div>
+          } @else {
+            <div class="pie-wrap">
+              <svg viewBox="0 0 100 100" class="pie-svg">
+                @for (seg of pieSegments(); track seg.asset; let i = $index) {
+                  <circle class="pie-seg"
+                    [attr.stroke]="seg.color"
+                    [attr.stroke-dasharray]="seg.dash + ' ' + (100 - seg.dash)"
+                    [attr.stroke-dashoffset]="seg.offset"
+                    r="15.9" cx="50" cy="50" fill="transparent" stroke-width="31.8" />
+                }
+              </svg>
+              <div class="pie-total">
+                <div class="pt-val">\${{ totalUsd().toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) }}</div>
+                <div class="pt-label">Total</div>
+              </div>
+            </div>
+            <div class="pie-legend">
+              @for (seg of pieSegments(); track seg.asset) {
+                <div class="pl-row">
+                  <span class="pl-dot" [style.background]="seg.color"></span>
+                  <span class="pl-name">{{ seg.asset }}</span>
+                  <span class="pl-pct">{{ seg.pct.toFixed(1) }}%</span>
+                  <span class="pl-val">\${{ seg.usd.toFixed(2) }}</span>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+      </div>
+
       <!-- Bottom quick actions -->
       @if (config.config().simpleMode) {
         <div class="bottom-bar">
           <a routerLink="/bot" class="bb-btn">Bot Config</a>
           <a routerLink="/trades" class="bb-btn">Trade History</a>
+          <a routerLink="/settings" class="bb-btn">Settings</a>
         </div>
       } @else {
         <div class="bottom-bar">
@@ -580,7 +717,98 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
       .kpi-row { grid-template-columns:repeat(2,1fr); }
       .hero-stats { display:none; }
       .bt-grid { grid-template-columns: repeat(2, 1fr); }
+      .bottom-grid { grid-template-columns: 1fr; }
     }
+
+    /* ── Notification bell ─────────────────────────── */
+    .notif-bell {
+      position:relative; width:32px; height:32px; border-radius:8px;
+      border:1px solid var(--border); background:var(--bg-hover);
+      cursor:pointer; display:flex; align-items:center; justify-content:center;
+      font-size:12px; font-weight:700; color:var(--text-muted);
+      transition: all 0.15s;
+    }
+    .notif-bell:hover { border-color:var(--blue); color:var(--blue); }
+    .notif-bell.has-unread { border-color:var(--blue); background:rgba(59,130,246,0.1); color:var(--blue); }
+    .bell-badge {
+      position:absolute; top:-5px; right:-5px; background:var(--red);
+      color:white; font-size:9px; font-weight:800; border-radius:10px;
+      min-width:16px; height:16px; display:flex; align-items:center; justify-content:center;
+      padding:0 3px;
+    }
+    .btn-enable-notif {
+      padding:4px 10px; border-radius:6px; border:1px solid var(--blue);
+      background:rgba(59,130,246,0.1); color:var(--blue); cursor:pointer;
+      font-size:11px; font-weight:700;
+    }
+
+    /* ── Bottom grid (3 panels) ─────────────────────── */
+    .bottom-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:16px; }
+
+    /* ── Notification list ──────────────────────────── */
+    .notif-empty { font-size:12px; color:var(--text-muted); text-align:center; padding:16px 0; }
+    .push-on { font-size:11px; color:var(--green); font-weight:700; background:rgba(38,166,154,0.1); padding:2px 8px; border-radius:10px; }
+    .notif-list { display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto; }
+    .notif-row {
+      display:flex; align-items:center; gap:10px;
+      background:var(--bg-primary); border:1px solid var(--border);
+      border-radius:8px; padding:8px 10px; transition:all 0.15s;
+    }
+    .notif-row.unread { border-color:rgba(59,130,246,0.3); }
+    .notif-row.triggered { opacity:0.5; }
+    .nr-icon {
+      width:26px; height:26px; border-radius:6px; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center;
+      font-size:10px; font-weight:800;
+    }
+    .nt-tp .nr-icon, .notif-row .nr-icon.up { background:rgba(38,166,154,0.15); color:var(--green); }
+    .nt-sl .nr-icon, .notif-row .nr-icon.dn { background:rgba(239,83,80,0.12); color:var(--red); }
+    .nt-buy .nr-icon { background:rgba(59,130,246,0.15); color:var(--blue); }
+    .nt-sell .nr-icon { background:rgba(245,158,11,0.12); color:var(--yellow); }
+    .nt-alert .nr-icon, .nt-limit .nr-icon { background:rgba(139,92,246,0.12); color:#8b5cf6; }
+    .nr-body { flex:1; min-width:0; }
+    .nr-title { font-size:12px; font-weight:600; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .nr-sub { font-size:11px; color:var(--text-muted); }
+    .nr-time { font-size:10px; color:var(--text-muted); flex-shrink:0; }
+    .nr-del {
+      background:none; border:none; color:var(--text-muted); cursor:pointer;
+      font-size:14px; padding:2px 4px; border-radius:4px; flex-shrink:0;
+    }
+    .nr-del:hover { color:var(--red); background:rgba(239,83,80,0.1); }
+
+    /* ── Price alert form ───────────────────────────── */
+    .alert-form { display:flex; gap:6px; margin-bottom:10px; }
+    .alert-dir {
+      padding:6px 8px; border-radius:6px; border:1px solid var(--border);
+      background:var(--bg-primary); color:var(--text-primary); font-size:12px;
+      cursor:pointer; flex-shrink:0;
+    }
+    .alert-input {
+      flex:1; padding:6px 10px; border-radius:6px; border:1px solid var(--border);
+      background:var(--bg-primary); color:var(--text-primary); font-size:12px; outline:none;
+    }
+    .alert-input:focus { border-color:var(--blue); }
+    .btn-add-alert {
+      padding:6px 12px; border-radius:6px; border:none;
+      background:var(--blue); color:white; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap;
+    }
+
+    /* ── Portfolio pie ──────────────────────────────── */
+    .pie-wrap { position:relative; width:120px; height:120px; margin:0 auto 12px; }
+    .pie-svg { width:120px; height:120px; transform:rotate(-90deg); }
+    .pie-seg { transition: stroke-dasharray 0.4s ease; }
+    .pie-total {
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      text-align:center; pointer-events:none;
+    }
+    .pt-val { font-size:13px; font-weight:800; color:var(--text-primary); white-space:nowrap; }
+    .pt-label { font-size:10px; color:var(--text-muted); }
+    .pie-legend { display:flex; flex-direction:column; gap:5px; }
+    .pl-row { display:flex; align-items:center; gap:7px; font-size:12px; }
+    .pl-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .pl-name { flex:1; color:var(--text-secondary); }
+    .pl-pct { color:var(--text-muted); font-size:11px; }
+    .pl-val { font-weight:600; color:var(--text-primary); }
   `]
 })
 export class DashboardComponent implements OnInit {
@@ -612,6 +840,8 @@ export class DashboardComponent implements OnInit {
     }, 0);
   });
 
+  showNotifPanel = signal(false);
+
   constructor(
     readonly ws: BinanceWsService,
     readonly bot: BotSchedulerService,
@@ -619,7 +849,55 @@ export class DashboardComponent implements OnInit {
     readonly config: ConfigService,
     private api: ApiService,
     private creds: CredentialsService,
+    readonly notif: NotificationService,
+    readonly priceAlerts: PriceAlertService,
   ) {}
+
+  toggleNotifPanel(): void {
+    this.showNotifPanel.update(v => !v);
+    if (this.showNotifPanel()) this.notif.markAllRead();
+  }
+
+  async enableNotifications(): Promise<void> {
+    await this.notif.requestPermission();
+  }
+
+  // Price alert form
+  alertPrice = signal('');
+  alertDirection = signal<'above' | 'below'>('above');
+
+  addAlert(): void {
+    const price = parseFloat(this.alertPrice());
+    if (!price || price <= 0) return;
+    this.priceAlerts.add(this.config.pair(), price, this.alertDirection());
+    this.alertPrice.set('');
+  }
+
+  private readonly PIE_COLORS = ['#3b82f6','#26a69a','#f59e0b','#ef5350','#8b5cf6','#10b981'];
+
+  readonly pieSegments = computed(() => {
+    const balances = this.walletBalances();
+    const btcPrice = this.ws.ticker()?.price ?? 0;
+    const items = balances.map(b => {
+      let usd = 0;
+      if (['USDT','BUSD','USDC'].includes(b.asset)) usd = b.total;
+      else if (b.asset === 'BTC' && btcPrice > 0) usd = b.total * btcPrice;
+      else usd = b.total; // rough fallback
+      return { asset: b.asset, usd };
+    }).filter(b => b.usd > 0);
+
+    const total = items.reduce((s, b) => s + b.usd, 0) || 1;
+    const circumference = 100; // SVG trick: r=15.9 → circumference ≈ 100
+    let offset = 25; // start at top
+
+    return items.map((b, i) => {
+      const pct = (b.usd / total) * 100;
+      const dash = (pct / 100) * circumference;
+      const seg = { asset: b.asset, usd: b.usd, pct, dash, offset, color: this.PIE_COLORS[i % this.PIE_COLORS.length] };
+      offset = offset - dash; // SVG offset goes counter-clockwise
+      return seg;
+    });
+  });
 
   async ngOnInit(): Promise<void> {
     await this.tradeStore.init();
