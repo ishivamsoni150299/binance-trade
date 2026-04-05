@@ -4,6 +4,7 @@ import { SidebarComponent } from './shared/components/sidebar.component';
 import { BinanceWsService } from './core/services/binance-ws.service';
 import { ConfigService } from './core/services/config.service';
 import { ApiService } from './core/services/api.service';
+import { BotSchedulerService } from './core/services/bot-scheduler.service';
 import { TradeStoreService } from './core/services/trade-store.service';
 import { PositionMonitorService } from './core/services/position-monitor.service';
 
@@ -91,15 +92,17 @@ export class AppComponent implements OnInit, OnDestroy {
     private ws: BinanceWsService,
     private config: ConfigService,
     private api: ApiService,
+    private bot: BotSchedulerService,
     private tradeStore: TradeStoreService,
     private _positionMonitor: PositionMonitorService,
   ) {}
 
-  ngOnInit(): void {
-    void this.tradeStore.init();
+  async ngOnInit(): Promise<void> {
+    await this.tradeStore.init();
     this.ws.connect(this.config.pair(), this.config.timeframe());
     this.loadMarketTickers();
     this.marketTimer = setInterval(() => this.loadMarketTickers(), 30000);
+    this.tryAutoStart();
   }
 
   ngOnDestroy(): void {
@@ -120,5 +123,12 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch {
       /* keep previous values */
     }
+  }
+
+  private tryAutoStart(): void {
+    const cfg = this.config.config();
+    if (!cfg.autoStart) return;
+    if (!cfg.riskParams.paperTrading) return;
+    if (this.bot.status() !== 'running') this.bot.start();
   }
 }

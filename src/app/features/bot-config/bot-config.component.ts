@@ -47,6 +47,47 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
             <div class="trust-hint">Applies recommended settings and enables scanning.</div>
           </div>
 
+          <!-- Automation -->
+          <div class="card">
+            <div class="card-title">Automation</div>
+            <div class="safe-row">
+              <div class="safe-left">
+                <div class="safe-title">Simple Mode</div>
+                <div class="safe-sub">Hide advanced settings</div>
+              </div>
+              <button class="safe-toggle" [class.active]="cfg().simpleMode" (click)="toggleSimpleMode()">
+                {{ cfg().simpleMode ? 'On' : 'Off' }}
+              </button>
+            </div>
+            <div class="safe-row">
+              <div class="safe-left">
+                <div class="safe-title">Auto Start Bot</div>
+                <div class="safe-sub">Runs on app open (paper only)</div>
+              </div>
+              <button class="safe-toggle" [class.active]="cfg().autoStart" (click)="toggleAutoStart()">
+                {{ cfg().autoStart ? 'On' : 'Off' }}
+              </button>
+            </div>
+            <div class="safe-row">
+              <div class="safe-left">
+                <div class="safe-title">Auto Pick Best Pair</div>
+                <div class="safe-sub">Scans trusted pairs</div>
+              </div>
+              <button class="safe-toggle" [class.active]="cfg().scanEnabled" (click)="toggleScan()">
+                {{ cfg().scanEnabled ? 'On' : 'Off' }}
+              </button>
+            </div>
+            <div class="safe-row">
+              <div class="safe-left">
+                <div class="safe-title">Trusted Only</div>
+                <div class="safe-sub">Limit trades to trusted list</div>
+              </div>
+              <button class="safe-toggle" [class.active]="cfg().trustedOnly" (click)="toggleTrustedOnly()">
+                {{ cfg().trustedOnly ? 'On' : 'Off' }}
+              </button>
+            </div>
+          </div>
+
           <!-- Market -->
           <div class="card">
             <div class="card-title">Market</div>
@@ -58,74 +99,58 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
                 }
               </select>
             </div>
-            <div class="form-row">
-              <label>Auto Pick Best Pair</label>
-              <div class="trust-row">
-                <button class="trust-toggle" [class.active]="cfg().scanEnabled" (click)="toggleScan()">
-                  {{ cfg().scanEnabled ? 'On' : 'Off' }}
-                </button>
-                <span class="trust-sub">Uses trusted pairs with top momentum and volume</span>
-              </div>
-            </div>
-            <div class="form-row">
-              <label>Scan Top N</label>
-              <div class="slider-row">
-                <div class="slider-label">
-                  <span>Top Candidates</span>
-                  <span class="slider-val">{{ cfg().scanTopN }}</span>
+            @if (!cfg().simpleMode) {
+              <div class="form-row">
+                <label>Scan Top N</label>
+                <div class="slider-row">
+                  <div class="slider-label">
+                    <span>Top Candidates</span>
+                    <span class="slider-val">{{ cfg().scanTopN }}</span>
+                  </div>
+                  <input type="range" min="1" max="5" step="1" class="slider"
+                    [ngModel]="cfg().scanTopN"
+                    (ngModelChange)="config.update({scanTopN: +$event})">
+                  <div class="slider-bounds"><span>1</span><span>5</span></div>
                 </div>
-                <input type="range" min="1" max="5" step="1" class="slider"
-                  [ngModel]="cfg().scanTopN"
-                  (ngModelChange)="config.update({scanTopN: +$event})">
-                <div class="slider-bounds"><span>1</span><span>5</span></div>
               </div>
-            </div>
-            <div class="form-row">
-              <label>Min Quote Volume (USDT)</label>
-              <div class="slider-row">
-                <div class="slider-label">
-                  <span>Min Volume</span>
-                  <span class="slider-val">\${{ (cfg().scanMinQuoteVolume / 1e6).toFixed(0) }}M</span>
+              <div class="form-row">
+                <label>Min Quote Volume (USDT)</label>
+                <div class="slider-row">
+                  <div class="slider-label">
+                    <span>Min Volume</span>
+                    <span class="slider-val">\${{ (cfg().scanMinQuoteVolume / 1e6).toFixed(0) }}M</span>
+                  </div>
+                  <input type="range" min="1" max="100" step="1" class="slider"
+                    [ngModel]="cfg().scanMinQuoteVolume / 1e6"
+                    (ngModelChange)="config.update({scanMinQuoteVolume: (+$event) * 1e6})">
+                  <div class="slider-bounds"><span>1M</span><span>100M</span></div>
                 </div>
-                <input type="range" min="1" max="100" step="1" class="slider"
-                  [ngModel]="cfg().scanMinQuoteVolume / 1e6"
-                  (ngModelChange)="config.update({scanMinQuoteVolume: (+$event) * 1e6})">
-                <div class="slider-bounds"><span>1M</span><span>100M</span></div>
               </div>
-            </div>
-            <div class="form-row">
-              <label>Rotation Interval</label>
-              <div class="slider-row">
-                <div class="slider-label">
-                  <span>Rotate Every</span>
-                  <span class="slider-val">{{ cfg().scanRotationSec }}s</span>
+              <div class="form-row">
+                <label>Rotation Interval</label>
+                <div class="slider-row">
+                  <div class="slider-label">
+                    <span>Rotate Every</span>
+                    <span class="slider-val">{{ cfg().scanRotationSec }}s</span>
+                  </div>
+                  <input type="range" min="0" max="300" step="10" class="slider"
+                    [ngModel]="cfg().scanRotationSec"
+                    (ngModelChange)="config.update({scanRotationSec: +$event})">
+                  <div class="slider-bounds"><span>0s</span><span>300s</span></div>
                 </div>
-                <input type="range" min="0" max="300" step="10" class="slider"
-                  [ngModel]="cfg().scanRotationSec"
-                  (ngModelChange)="config.update({scanRotationSec: +$event})">
-                <div class="slider-bounds"><span>0s</span><span>300s</span></div>
               </div>
-            </div>
-            <div class="form-row">
-              <label>Trusted Only</label>
-              <div class="trust-row">
-                <button class="trust-toggle" [class.active]="cfg().trustedOnly" (click)="toggleTrustedOnly()">
-                  {{ cfg().trustedOnly ? 'On' : 'Off' }}
-                </button>
-                <span class="trust-sub">Limit trades to trusted pairs only</span>
+              <div class="form-row">
+                <label>Trusted Pairs</label>
+                <div class="trust-grid">
+                  @for (pair of pairs; track pair) {
+                    <button class="trust-chip" [class.active]="isTrusted(pair)" (click)="toggleTrustedPair(pair)">
+                      {{ pair }}
+                    </button>
+                  }
+                </div>
+                <div class="trust-hint">Select the pairs you trust for automated trading.</div>
               </div>
-            </div>
-            <div class="form-row">
-              <label>Trusted Pairs</label>
-              <div class="trust-grid">
-                @for (pair of pairs; track pair) {
-                  <button class="trust-chip" [class.active]="isTrusted(pair)" (click)="toggleTrustedPair(pair)">
-                    {{ pair }}
-                  </button>
-                }
-              </div>
-              <div class="trust-hint">Select the pairs you trust for automated trading.</div>
-            </div>
+            }
             <div class="form-row">
               <label>Timeframe</label>
               <div class="btn-group">
@@ -136,22 +161,24 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
             </div>
           </div>
 
-          <!-- Strategy selector -->
-          <div class="card">
-            <div class="card-title">Strategy</div>
-            <div class="strategy-cards">
-              @for (s of strategies; track s) {
-                <div class="strategy-card" [class.selected]="cfg().strategy === s" (click)="config.update({strategy: s})">
-                  <div class="sc-icon">{{ strategyIcon[s] }}</div>
-                  <div class="sc-name">{{ s }}</div>
-                  <div class="sc-desc">{{ strategyDesc[s] }}</div>
-                  @if (cfg().strategy === s) {
-                    <div class="sc-check">OK</div>
-                  }
-                </div>
-              }
+          @if (!cfg().simpleMode) {
+            <!-- Strategy selector -->
+            <div class="card">
+              <div class="card-title">Strategy</div>
+              <div class="strategy-cards">
+                @for (s of strategies; track s) {
+                  <div class="strategy-card" [class.selected]="cfg().strategy === s" (click)="config.update({strategy: s})">
+                    <div class="sc-icon">{{ strategyIcon[s] }}</div>
+                    <div class="sc-name">{{ s }}</div>
+                    <div class="sc-desc">{{ strategyDesc[s] }}</div>
+                    @if (cfg().strategy === s) {
+                      <div class="sc-check">OK</div>
+                    }
+                  </div>
+                }
+              </div>
             </div>
-          </div>
+          }
 
           <!-- Trading mode -->
           <div class="card">
@@ -180,9 +207,10 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
         <!-- RIGHT: Parameters -->
         <div class="config-col">
 
-          <!-- Strategy params -->
-          <div class="card">
-            <div class="card-title">Strategy Parameters</div>
+          @if (!cfg().simpleMode) {
+            <!-- Strategy params -->
+            <div class="card">
+              <div class="card-title">Strategy Parameters</div>
             <div class="slider-row">
               <div class="slider-label">
                 <span>RSI Period</span>
@@ -334,11 +362,13 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
                 (ngModelChange)="config.updateStrategy({confirmBars: +$event})">
               <div class="slider-bounds"><span>1</span><span>5</span></div>
             </div>
-          </div>
+            </div>
+          }
 
           <!-- Risk management -->
-          <div class="card">
-            <div class="card-title">Risk Management</div>
+          @if (!cfg().simpleMode) {
+            <div class="card">
+              <div class="card-title">Risk Management</div>
 
             <div class="safe-row">
               <div class="safe-left">
@@ -480,7 +510,8 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
                 <span class="rr-value">{{ breakEvenWinRate().toFixed(0) }}%</span>
               </div>
             </div>
-          </div>
+            </div>
+          }
 
         </div>
       </div>
@@ -749,6 +780,16 @@ export class BotConfigComponent {
     this.config.update({ scanEnabled: next });
   }
 
+  toggleSimpleMode(): void {
+    const next = !this.config.config().simpleMode;
+    this.config.update({ simpleMode: next });
+  }
+
+  toggleAutoStart(): void {
+    const next = !this.config.config().autoStart;
+    this.config.update({ autoStart: next });
+  }
+
   applyPreset(mode: 'conservative' | 'balanced'): void {
     if (mode === 'conservative') {
       this.config.update({
@@ -757,6 +798,8 @@ export class BotConfigComponent {
         scanMinQuoteVolume: 30_000_000,
         scanRotationSec: 120,
         trustedOnly: true,
+        simpleMode: true,
+        autoStart: true,
       });
       this.config.updateStrategy({
         useTrendFilter: true,
@@ -793,6 +836,8 @@ export class BotConfigComponent {
       scanMinQuoteVolume: 20_000_000,
       scanRotationSec: 120,
       trustedOnly: true,
+      simpleMode: true,
+      autoStart: true,
     });
     this.config.updateStrategy({
       useTrendFilter: true,

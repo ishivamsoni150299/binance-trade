@@ -73,6 +73,8 @@ export interface BotConfig {
   scanTopN: number;
   scanMinQuoteVolume: number;
   scanRotationSec: number;
+  simpleMode: boolean;
+  autoStart: boolean;
   timeframe: Timeframe;
   strategy: StrategyType;
   strategyParams: StrategyParams;
@@ -190,6 +192,8 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   scanTopN: 4,
   scanMinQuoteVolume: 20_000_000,
   scanRotationSec: 120,
+  simpleMode: true,
+  autoStart: true,
   timeframe: '1h',
   strategy: 'COMPOSITE',
   strategyParams: DEFAULT_STRATEGY_PARAMS,
