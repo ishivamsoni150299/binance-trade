@@ -58,6 +58,45 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
               </div>
             </div>
             <div class="form-row">
+              <label>Scan Top N</label>
+              <div class="slider-row">
+                <div class="slider-label">
+                  <span>Top Candidates</span>
+                  <span class="slider-val">{{ cfg().scanTopN }}</span>
+                </div>
+                <input type="range" min="1" max="5" step="1" class="slider"
+                  [ngModel]="cfg().scanTopN"
+                  (ngModelChange)="config.update({scanTopN: +$event})">
+                <div class="slider-bounds"><span>1</span><span>5</span></div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label>Min Quote Volume (USDT)</label>
+              <div class="slider-row">
+                <div class="slider-label">
+                  <span>Min Volume</span>
+                  <span class="slider-val">\${{ (cfg().scanMinQuoteVolume / 1e6).toFixed(0) }}M</span>
+                </div>
+                <input type="range" min="1" max="100" step="1" class="slider"
+                  [ngModel]="cfg().scanMinQuoteVolume / 1e6"
+                  (ngModelChange)="config.update({scanMinQuoteVolume: (+$event) * 1e6})">
+                <div class="slider-bounds"><span>1M</span><span>100M</span></div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label>Rotation Interval</label>
+              <div class="slider-row">
+                <div class="slider-label">
+                  <span>Rotate Every</span>
+                  <span class="slider-val">{{ cfg().scanRotationSec }}s</span>
+                </div>
+                <input type="range" min="0" max="300" step="10" class="slider"
+                  [ngModel]="cfg().scanRotationSec"
+                  (ngModelChange)="config.update({scanRotationSec: +$event})">
+                <div class="slider-bounds"><span>0s</span><span>300s</span></div>
+              </div>
+            </div>
+            <div class="form-row">
               <label>Trusted Only</label>
               <div class="trust-row">
                 <button class="trust-toggle" [class.active]="cfg().trustedOnly" (click)="toggleTrustedOnly()">
@@ -370,6 +409,43 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
                 (ngModelChange)="config.updateRisk({maxDailyLossPct: +$event})">
               <div class="slider-bounds"><span>1%</span><span>20%</span></div>
             </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Max Drawdown</span>
+                <span class="slider-val red">{{ cfg().riskParams.maxDrawdownPct }}%</span>
+              </div>
+              <input type="range" min="5" max="50" step="1" class="slider red-slider"
+                [ngModel]="cfg().riskParams.maxDrawdownPct"
+                (ngModelChange)="config.updateRisk({maxDrawdownPct: +$event})">
+              <div class="slider-bounds"><span>5%</span><span>50%</span></div>
+            </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Trade Cooldown</span>
+                <span class="slider-val">{{ cfg().riskParams.cooldownSec }}s</span>
+              </div>
+              <input type="range" min="0" max="600" step="10" class="slider"
+                [ngModel]="cfg().riskParams.cooldownSec"
+                (ngModelChange)="config.updateRisk({cooldownSec: +$event})">
+              <div class="slider-bounds"><span>0s</span><span>600s</span></div>
+            </div>
+            <div class="form-row">
+              <label>No-Trade Window</label>
+              <div class="nt-row">
+                <select [ngModel]="cfg().riskParams.noTradeStartHour" (ngModelChange)="config.updateRisk({noTradeStartHour: +$event})">
+                  @for (h of hours; track h) {
+                    <option [value]="h">{{ formatHour(h) }}</option>
+                  }
+                </select>
+                <span class="nt-sep">to</span>
+                <select [ngModel]="cfg().riskParams.noTradeEndHour" (ngModelChange)="config.updateRisk({noTradeEndHour: +$event})">
+                  @for (h of hours; track h) {
+                    <option [value]="h">{{ formatHour(h) }}</option>
+                  }
+                </select>
+              </div>
+              <div class="trust-hint">Set both to the same hour to disable.</div>
+            </div>
 
             <!-- Risk/Reward summary -->
             <div class="rr-summary">
@@ -467,6 +543,9 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
     }
     .trust-chip.active { background: rgba(59,130,246,0.12); color: var(--blue); border-color: rgba(59,130,246,0.4); }
     .trust-hint { margin-top: 6px; font-size: 11px; color: var(--text-muted); }
+    .nt-row { display: flex; align-items: center; gap: 8px; }
+    .nt-row select { flex: 1; }
+    .nt-sep { font-size: 11px; color: var(--text-muted); }
     select {
       width: 100%; background: var(--bg-hover); border: 1px solid var(--border);
       border-radius: 8px; padding: 8px 12px; color: var(--text-primary); font-size: 13px;
@@ -548,6 +627,7 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
 })
 export class BotConfigComponent {
   pairs = TRUSTED_PAIRS;
+  hours = Array.from({ length: 24 }, (_, i) => i);
   timeframes: Timeframe[] = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
   strategies: StrategyType[] = ['RSI', 'MACD', 'BOLLINGER', 'EMA', 'COMPOSITE'];
 
@@ -573,6 +653,10 @@ export class BotConfigComponent {
     minPositionSizePct: 1,
     maxPositionSizePct: 3,
     volatilityTargetPct: 2,
+    maxDrawdownPct: 10,
+    cooldownSec: 120,
+    noTradeStartHour: 0,
+    noTradeEndHour: 0,
     paperTrading: true,
   };
 
@@ -594,7 +678,11 @@ export class BotConfigComponent {
       r.dynamicPositionSizing === this.safeRisk.dynamicPositionSizing &&
       r.minPositionSizePct === this.safeRisk.minPositionSizePct &&
       r.maxPositionSizePct === this.safeRisk.maxPositionSizePct &&
-      r.volatilityTargetPct === this.safeRisk.volatilityTargetPct;
+      r.volatilityTargetPct === this.safeRisk.volatilityTargetPct &&
+      r.maxDrawdownPct === this.safeRisk.maxDrawdownPct &&
+      r.cooldownSec === this.safeRisk.cooldownSec &&
+      r.noTradeStartHour === this.safeRisk.noTradeStartHour &&
+      r.noTradeEndHour === this.safeRisk.noTradeEndHour;
   });
 
   constructor(
@@ -645,6 +733,11 @@ export class BotConfigComponent {
 
   toggleDynamicSizing(): void {
     this.config.updateRisk({ dynamicPositionSizing: !this.config.config().riskParams.dynamicPositionSizing });
+  }
+
+  formatHour(h: number): string {
+    const hh = h.toString().padStart(2, '0');
+    return `${hh}:00`;
   }
 
   toggleTrustedOnly(): void {

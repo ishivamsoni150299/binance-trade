@@ -125,8 +125,13 @@ export class ApiService {
   }
 
   // Signed / bot actions - must go through Vercel proxy (server holds API keys)
-  async getWalletBalances(): Promise<WalletResponse> {
-    return firstValueFrom(this.http.get<WalletResponse>('/api/wallet/balances'));
+  async getWalletBalances(force = false): Promise<WalletResponse> {
+    return this.cached(
+      'wallet',
+      15000,
+      () => firstValueFrom(this.http.get<WalletResponse>('/api/wallet/balances')),
+      force
+    );
   }
 
   // Backtest - runs on server for consistent strategy logic

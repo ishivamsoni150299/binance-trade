@@ -104,6 +104,8 @@ export class BotSchedulerService implements OnDestroy {
       scanEnabled: cfg.scanEnabled,
       openPositions: this.tradeStore.openTrades().length,
       dailyPnlPct: this.tradeStore.dailyPnlPct(),
+      maxDrawdownPct: this.tradeStore.maxDrawdownPct(),
+      lastClosedAt: this.tradeStore.lastClosedAt(),
     };
   }
 }

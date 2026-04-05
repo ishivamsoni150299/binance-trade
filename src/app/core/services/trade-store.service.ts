@@ -31,6 +31,16 @@ export class TradeStoreService {
     };
   });
 
+  readonly totalPnl = computed(() => {
+    const closed = this.closedTrades();
+    return closed.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  });
+
+  readonly equity = computed(() => {
+    const base = 10000;
+    return base + this.totalPnl();
+  });
+
   readonly dailyPnl = computed(() => {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
@@ -44,6 +54,29 @@ export class TradeStoreService {
     const base = 10000; // Paper baseline
     const pnl = this.dailyPnl();
     return base > 0 ? (pnl / base) * 100 : 0;
+  });
+
+  readonly maxDrawdownPct = computed(() => {
+    const base = 10000;
+    const closed = this.closedTrades()
+      .filter(t => typeof t.closedAt === 'number')
+      .sort((a, b) => (a.closedAt ?? 0) - (b.closedAt ?? 0));
+    let equity = base;
+    let peak = base;
+    let maxDd = 0;
+    for (const t of closed) {
+      equity += (t.pnl ?? 0);
+      if (equity > peak) peak = equity;
+      const dd = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
+      if (dd > maxDd) maxDd = dd;
+    }
+    return maxDd;
+  });
+
+  readonly lastClosedAt = computed(() => {
+    const closed = this.closedTrades();
+    if (!closed.length) return 0;
+    return closed.reduce((m, t) => Math.max(m, t.closedAt ?? 0), 0);
   });
 
   async init(): Promise<void> {

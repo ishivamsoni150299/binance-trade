@@ -249,36 +249,91 @@ function computePositionSizePct(risk: any, signalScore: number, volatilityPct: n
   return sizePct;
 }
 
-async function pickBestPair(symbols: string[]): Promise<string | null> {
-  if (!symbols.length) return null;
-  try {
-    const tickers = await getTickersCached(symbols);
-    if (!Array.isArray(tickers) || tickers.length === 0) return symbols[0];
-    let maxMomentum = 0;
-    let maxVolume = 0;
-    for (const t of tickers) {
-      const momentum = Math.abs(parseFloat(t.priceChangePercent ?? '0'));
-      const volume = parseFloat(t.quoteVolume ?? '0');
-      if (momentum > maxMomentum) maxMomentum = momentum;
-      if (volume > maxVolume) maxVolume = volume;
-    }
-    let best = symbols[0];
-    let bestScore = -1;
-    for (const t of tickers) {
-      const momentum = Math.abs(parseFloat(t.priceChangePercent ?? '0'));
-      const volume = parseFloat(t.quoteVolume ?? '0');
-      const momentumScore = maxMomentum > 0 ? momentum / maxMomentum : 0;
-      const volumeScore = maxVolume > 0 ? volume / maxVolume : 0;
-      const score = momentumScore * 0.6 + volumeScore * 0.4;
-      if (score > bestScore) {
-        bestScore = score;
-        best = t.symbol ?? best;
-      }
-    }
-    return best;
-  } catch {
-    return symbols[0] ?? null;
+function inNoTradeWindow(startHour: number, endHour: number): boolean {
+  if (startHour === endHour) return false;
+  const now = new Date();
+  const h = now.getHours();
+  if (startHour < endHour) return h >= startHour && h < endHour;
+  return h >= startHour || h < endHour;
+}
+
+type ScanCandidate = {
+  symbol: string;
+  longScore: number;
+  shortScore: number;
+};
+
+function rotate<T>(list: T[], rotationSec: number): T[] {
+  if (!rotationSec || list.length === 0) return list;
+  const idx = Math.floor(Date.now() / (rotationSec * 1000)) % list.length;
+  return list.slice(idx).concat(list.slice(0, idx));
+}
+
+function buildScanLists(tickers: any[], minQuoteVolume: number, topN: number, rotationSec: number) {
+  if (!Array.isArray(tickers) || tickers.length === 0) return { long: [] as ScanCandidate[], short: [] as ScanCandidate[] };
+  const filtered = tickers.filter(t => parseFloat(t.quoteVolume ?? '0') >= minQuoteVolume);
+  if (!filtered.length) return { long: [] as ScanCandidate[], short: [] as ScanCandidate[] };
+
+  let maxPos = 0;
+  let maxNeg = 0;
+  let maxVol = 0;
+  for (const t of filtered) {
+    const chg = parseFloat(t.priceChangePercent ?? '0');
+    const vol = parseFloat(t.quoteVolume ?? '0');
+    if (chg > maxPos) maxPos = chg;
+    if (chg < 0 && Math.abs(chg) > maxNeg) maxNeg = Math.abs(chg);
+    if (vol > maxVol) maxVol = vol;
   }
+
+  const candidates: ScanCandidate[] = filtered.map(t => {
+    const symbol = t.symbol;
+    const chg = parseFloat(t.priceChangePercent ?? '0');
+    const vol = parseFloat(t.quoteVolume ?? '0');
+    const volScore = maxVol > 0 ? vol / maxVol : 0;
+    const longMomentum = chg > 0 && maxPos > 0 ? chg / maxPos : 0;
+    const shortMomentum = chg < 0 && maxNeg > 0 ? Math.abs(chg) / maxNeg : 0;
+    const longScore = longMomentum * 0.6 + volScore * 0.4;
+    const shortScore = shortMomentum * 0.6 + volScore * 0.4;
+    return { symbol, longScore, shortScore };
+  });
+
+  const long = rotate(
+    [...candidates].sort((a, b) => b.longScore - a.longScore).slice(0, Math.max(1, topN)),
+    rotationSec
+  );
+  const short = rotate(
+    [...candidates].sort((a, b) => b.shortScore - a.shortScore).slice(0, Math.max(1, topN)),
+    rotationSec
+  );
+  return { long, short };
+}
+
+async function pickPairBySignal(
+  lists: { long: ScanCandidate[]; short: ScanCandidate[] },
+  timeframe: string,
+  strategy: string,
+  strategyParams: any,
+): Promise<{ pair: string; signal: any } | null> {
+  const seen = new Set<string>();
+  const candidates = [...lists.long, ...lists.short].filter(c => {
+    if (seen.has(c.symbol)) return false;
+    seen.add(c.symbol);
+    return true;
+  });
+  if (!candidates.length) return null;
+
+  let best: { pair: string; signal: any; score: number } | null = null;
+  for (const c of candidates) {
+    const raw = await fetchKlines(c.symbol, timeframe, 200);
+    const closes = raw.map((k: any[]) => parseFloat(k[4]));
+    if (closes.length < 30) continue;
+    const signal = computeSignal(strategy, closes, strategyParams);
+    if (signal.action === 'HOLD') continue;
+    const momentumScore = signal.action === 'BUY' ? c.longScore : c.shortScore;
+    const score = Math.abs(signal.score) * 0.7 + momentumScore * 0.3;
+    if (!best || score > best.score) best = { pair: c.symbol, signal, score };
+  }
+  return best ? { pair: best.pair, signal: best.signal } : null;
 }
 
 // Main bot cycle
@@ -290,6 +345,59 @@ async function runBotCycle(): Promise<void> {
   const trustedOnly = config.trustedOnly === true;
   const trustedPairs = Array.isArray(config.trustedPairs) ? config.trustedPairs : [];
   const scanEnabled = config.scanEnabled === true;
+  const scanTopN = config.scanTopN ?? 3;
+  const scanMinQuoteVolume = config.scanMinQuoteVolume ?? 10_000_000;
+  const scanRotationSec = config.scanRotationSec ?? 60;
+  const risk = config.riskParams ?? {};
+  const now = Date.now();
+
+  if (risk.maxDrawdownPct && (config.maxDrawdownPct ?? 0) >= risk.maxDrawdownPct) {
+    self.postMessage({
+      type: 'CYCLE_RESULT',
+      result: {
+        action: 'BLOCKED',
+        reason: 'Max drawdown reached',
+        score: 0,
+        price: 0,
+        indicators: {},
+        pair,
+        timestamp: now,
+      },
+    });
+    return;
+  }
+
+  if (risk.cooldownSec && config.lastClosedAt && (now - config.lastClosedAt) < risk.cooldownSec * 1000) {
+    self.postMessage({
+      type: 'CYCLE_RESULT',
+      result: {
+        action: 'BLOCKED',
+        reason: 'Trade cooldown',
+        score: 0,
+        price: 0,
+        indicators: {},
+        pair,
+        timestamp: now,
+      },
+    });
+    return;
+  }
+
+  if (inNoTradeWindow(risk.noTradeStartHour ?? 0, risk.noTradeEndHour ?? 0)) {
+    self.postMessage({
+      type: 'CYCLE_RESULT',
+      result: {
+        action: 'BLOCKED',
+        reason: 'No-trade window',
+        score: 0,
+        price: 0,
+        indicators: {},
+        pair,
+        timestamp: now,
+      },
+    });
+    return;
+  }
 
   if (trustedOnly && !trustedPairs.includes(pair) && !scanEnabled) {
     self.postMessage({
@@ -313,17 +421,24 @@ async function runBotCycle(): Promise<void> {
     // Paper mode: run entirely in browser - no Vercel/server needed
     if (isPaper) {
       let selectedPair = pair;
+      let signal: any = null;
       if (scanEnabled) {
         const candidates = trustedOnly ? trustedPairs : (trustedPairs.length ? trustedPairs : [pair]);
-        const best = await pickBestPair(candidates);
-        if (best) selectedPair = best;
+        const tickers = await getTickersCached(candidates);
+        const lists = buildScanLists(tickers, scanMinQuoteVolume, scanTopN, scanRotationSec);
+        const best = await pickPairBySignal(lists, config.timeframe ?? '1h', config.strategy ?? 'COMPOSITE', config.strategyParams);
+        if (best) {
+          selectedPair = best.pair;
+          signal = best.signal;
+        } else if (lists.long.length) {
+          selectedPair = lists.long[0].symbol;
+        }
       }
 
       const rawKlines = await fetchKlines(selectedPair, config.timeframe ?? '1h', 200);
       const closes = rawKlines.map((k: any[]) => parseFloat(k[4]));
       const currentPrice = closes[closes.length - 1];
-      const signal = computeSignal(config.strategy ?? 'COMPOSITE', closes, config.strategyParams);
-      const risk = config.riskParams ?? {};
+      if (!signal) signal = computeSignal(config.strategy ?? 'COMPOSITE', closes, config.strategyParams);
       const maxOpenPositions = risk.maxOpenPositions ?? 1;
       const maxDailyLossPct = risk.maxDailyLossPct ?? 5;
 
@@ -387,9 +502,14 @@ async function runBotCycle(): Promise<void> {
         paperTrading: false,
         openPositions: config.openPositions ?? 0,
         dailyPnlPct: config.dailyPnlPct ?? 0,
+        maxDrawdownPct: config.maxDrawdownPct ?? 0,
+        lastClosedAt: config.lastClosedAt ?? 0,
         trustedOnly: config.trustedOnly ?? true,
         trustedPairs: config.trustedPairs ?? [],
         scanEnabled: config.scanEnabled ?? true,
+        scanTopN: config.scanTopN ?? 3,
+        scanMinQuoteVolume: config.scanMinQuoteVolume ?? 10_000_000,
+        scanRotationSec: config.scanRotationSec ?? 60,
       }),
     });
 

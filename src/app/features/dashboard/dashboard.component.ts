@@ -192,7 +192,7 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
               @if (walletUpdatedAt() > 0) {
                 <span class="panel-time">{{ walletUpdatedAt() | date:'HH:mm' }}</span>
               }
-              <button class="refresh-btn" (click)="loadWallet()" [disabled]="walletLoading()">Refresh</button>
+              <button class="refresh-btn" (click)="loadWallet(true)" [disabled]="walletLoading()">Refresh</button>
             </div>
           </div>
 
@@ -618,7 +618,7 @@ export class DashboardComponent implements OnInit {
     void this.runBacktest();
   }
 
-  async loadWallet(): Promise<void> {
+  async loadWallet(force = false): Promise<void> {
     this.walletLoading.set(true);
     this.walletError.set(null);
     try {
@@ -627,7 +627,7 @@ export class DashboardComponent implements OnInit {
         this.walletUpdatedAt.set(Date.now());
         return;
       }
-      const data = await this.api.getWalletBalances();
+      const data = await this.api.getWalletBalances(force);
       this.walletBalances.set(data.balances ?? []);
       this.walletUpdatedAt.set(data.updatedAt ?? data.timestamp ?? Date.now());
     } catch {

@@ -23,6 +23,8 @@ export class BinanceWsService implements OnDestroy {
   private reconnectDelay = 2000;
   private currentSymbol = '';
   private currentInterval = '';
+  private lastTickerTs = 0;
+  private lastDepthTs = 0;
 
   readonly ticker = signal<Ticker | null>(null);
   readonly orderBook = signal<OrderBook>({ bids: [], asks: [] });
@@ -52,7 +54,7 @@ export class BinanceWsService implements OnDestroy {
     const iv = this.currentInterval;
     const streams = [
       `${sym}@ticker`,
-      `${sym}@depth10@100ms`,
+      `${sym}@depth10@1000ms`,
       `${sym}@kline_${iv}`
     ].join('/');
 
@@ -83,6 +85,9 @@ export class BinanceWsService implements OnDestroy {
     if (!stream) return;
 
     if (stream.endsWith('@ticker')) {
+      const now = Date.now();
+      if (now - this.lastTickerTs < 1000) return;
+      this.lastTickerTs = now;
       this.ticker.set({
         symbol: data.s,
         price: parseFloat(data.c),
@@ -93,6 +98,9 @@ export class BinanceWsService implements OnDestroy {
         volume: parseFloat(data.v),
       });
     } else if (stream.includes('@depth')) {
+      const now = Date.now();
+      if (now - this.lastDepthTs < 1000) return;
+      this.lastDepthTs = now;
       this.orderBook.set({
         bids: (data.bids || []).map((b: string[]) => ({ price: parseFloat(b[0]), qty: parseFloat(b[1]) })),
         asks: (data.asks || []).map((a: string[]) => ({ price: parseFloat(a[0]), qty: parseFloat(a[1]) })),

@@ -56,6 +56,10 @@ export interface RiskParams {
   minPositionSizePct: number;
   maxPositionSizePct: number;
   volatilityTargetPct: number;
+  maxDrawdownPct: number;
+  cooldownSec: number;
+  noTradeStartHour: number;   // 0-23
+  noTradeEndHour: number;     // 0-23
   paperTrading: boolean;
 }
 
@@ -65,6 +69,9 @@ export interface BotConfig {
   trustedOnly: boolean;
   trustedPairs: string[];
   scanEnabled: boolean;
+  scanTopN: number;
+  scanMinQuoteVolume: number;
+  scanRotationSec: number;
   timeframe: Timeframe;
   strategy: StrategyType;
   strategyParams: StrategyParams;
@@ -152,6 +159,10 @@ export const DEFAULT_RISK_PARAMS: RiskParams = {
   minPositionSizePct: 1,
   maxPositionSizePct: 8,
   volatilityTargetPct: 2,
+  maxDrawdownPct: 15,
+  cooldownSec: 60,
+  noTradeStartHour: 0,
+  noTradeEndHour: 0,
   paperTrading: true,
 };
 
@@ -174,6 +185,9 @@ export const DEFAULT_BOT_CONFIG: BotConfig = {
   trustedOnly: true,
   trustedPairs: TRUSTED_PAIRS,
   scanEnabled: true,
+  scanTopN: 3,
+  scanMinQuoteVolume: 10_000_000,
+  scanRotationSec: 60,
   timeframe: '1h',
   strategy: 'COMPOSITE',
   strategyParams: DEFAULT_STRATEGY_PARAMS,

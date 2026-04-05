@@ -12,6 +12,13 @@ function verifySecret(req: VercelRequest): boolean {
     req.headers['authorization'] === `Bearer ${BOT_SECRET}`;
 }
 
+function inNoTradeWindow(startHour: number, endHour: number): boolean {
+  if (startHour === endHour) return false;
+  const h = new Date().getUTCHours();
+  if (startHour < endHour) return h >= startHour && h < endHour;
+  return h >= startHour || h < endHour;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
@@ -32,9 +39,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       paperTrading = true,
       openPositions = 0,
       dailyPnlPct = 0,
+      maxDrawdownPct = 0,
+      lastClosedAt = 0,
       trustedOnly = true,
       trustedPairs = TRUSTED_PAIRS,
       scanEnabled = true,
+      scanTopN = 3,
+      scanMinQuoteVolume = 10_000_000,
+      scanRotationSec = 60,
     } = config;
 
     const rawTrusted = Array.isArray(trustedPairs)
@@ -42,6 +54,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : typeof trustedPairs === 'string'
         ? trustedPairs.split(',').map(s => s.trim()).filter(Boolean)
         : TRUSTED_PAIRS;
+
+    const now = Date.now();
+    if (riskParams.maxDrawdownPct && maxDrawdownPct >= riskParams.maxDrawdownPct) {
+      return res.status(200).json({
+        action: 'BLOCKED',
+        reason: 'Max drawdown reached',
+        score: 0,
+        price: 0,
+        indicators: {},
+        pair,
+        timestamp: now,
+      });
+    }
+
+    if (riskParams.cooldownSec && lastClosedAt && (now - lastClosedAt) < riskParams.cooldownSec * 1000) {
+      return res.status(200).json({
+        action: 'BLOCKED',
+        reason: 'Trade cooldown',
+        score: 0,
+        price: 0,
+        indicators: {},
+        pair,
+        timestamp: now,
+      });
+    }
+
+    if (inNoTradeWindow(riskParams.noTradeStartHour ?? 0, riskParams.noTradeEndHour ?? 0)) {
+      return res.status(200).json({
+        action: 'BLOCKED',
+        reason: 'No-trade window',
+        score: 0,
+        price: 0,
+        indicators: {},
+        pair,
+        timestamp: now,
+      });
+    }
 
     if (trustedOnly && !rawTrusted.includes(pair) && !scanEnabled) {
       return res.status(200).json({
@@ -51,15 +100,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         price: 0,
         indicators: {},
         pair,
-        timestamp: Date.now(),
+        timestamp: now,
       });
     }
 
     let selectedPair = pair;
+    let signal = null as ReturnType<typeof getStrategySignal> | null;
+
     if (scanEnabled) {
       const candidates = trustedOnly ? rawTrusted : rawTrusted.length ? rawTrusted : [pair];
-      const best = await pickBestPair(candidates);
-      if (best) selectedPair = best;
+      const tickers = await getTickersBySymbols(candidates);
+      const lists = buildScanLists(tickers, scanMinQuoteVolume, scanTopN, scanRotationSec);
+      const best = await pickPairBySignal(lists, timeframe, strategy, strategyParams);
+      if (best) {
+        selectedPair = best.pair;
+        signal = best.signal;
+      } else if (lists.long.length) {
+        selectedPair = lists.long[0].symbol;
+      }
     }
 
     // 1. Fetch candle history from Binance
@@ -71,7 +129,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 2. Run strategy (selected in UI)
-    const signal = getStrategySignal(strategy, closes, strategyParams);
+    if (!signal) {
+      signal = getStrategySignal(strategy, closes, strategyParams);
+    }
     const indicators = signal.indicators;
 
     const currentPrice = closes[closes.length - 1];
@@ -188,34 +248,81 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-async function pickBestPair(symbols: string[]): Promise<string | null> {
-  if (!symbols.length) return null;
-  try {
-    const tickers = await getTickersBySymbols(symbols);
-    if (!Array.isArray(tickers) || tickers.length === 0) return symbols[0];
-    let maxMomentum = 0;
-    let maxVolume = 0;
-    for (const t of tickers) {
-      const momentum = Math.abs(parseFloat(t.priceChangePercent ?? '0'));
-      const volume = parseFloat(t.quoteVolume ?? '0');
-      if (momentum > maxMomentum) maxMomentum = momentum;
-      if (volume > maxVolume) maxVolume = volume;
-    }
-    let best = symbols[0];
-    let bestScore = -1;
-    for (const t of tickers) {
-      const momentum = Math.abs(parseFloat(t.priceChangePercent ?? '0'));
-      const volume = parseFloat(t.quoteVolume ?? '0');
-      const momentumScore = maxMomentum > 0 ? momentum / maxMomentum : 0;
-      const volumeScore = maxVolume > 0 ? volume / maxVolume : 0;
-      const score = momentumScore * 0.6 + volumeScore * 0.4;
-      if (score > bestScore) {
-        bestScore = score;
-        best = t.symbol ?? best;
-      }
-    }
-    return best;
-  } catch {
-    return symbols[0] ?? null;
+type ScanCandidate = {
+  symbol: string;
+  longScore: number;
+  shortScore: number;
+};
+
+function rotate<T>(list: T[], rotationSec: number): T[] {
+  if (!rotationSec || list.length === 0) return list;
+  const idx = Math.floor(Date.now() / (rotationSec * 1000)) % list.length;
+  return list.slice(idx).concat(list.slice(0, idx));
+}
+
+function buildScanLists(tickers: any[], minQuoteVolume: number, topN: number, rotationSec: number) {
+  if (!Array.isArray(tickers) || tickers.length === 0) return { long: [] as ScanCandidate[], short: [] as ScanCandidate[] };
+  const filtered = tickers.filter(t => parseFloat(t.quoteVolume ?? '0') >= minQuoteVolume);
+  if (!filtered.length) return { long: [] as ScanCandidate[], short: [] as ScanCandidate[] };
+
+  let maxPos = 0;
+  let maxNeg = 0;
+  let maxVol = 0;
+  for (const t of filtered) {
+    const chg = parseFloat(t.priceChangePercent ?? '0');
+    const vol = parseFloat(t.quoteVolume ?? '0');
+    if (chg > maxPos) maxPos = chg;
+    if (chg < 0 && Math.abs(chg) > maxNeg) maxNeg = Math.abs(chg);
+    if (vol > maxVol) maxVol = vol;
   }
+
+  const candidates: ScanCandidate[] = filtered.map(t => {
+    const symbol = t.symbol;
+    const chg = parseFloat(t.priceChangePercent ?? '0');
+    const vol = parseFloat(t.quoteVolume ?? '0');
+    const volScore = maxVol > 0 ? vol / maxVol : 0;
+    const longMomentum = chg > 0 && maxPos > 0 ? chg / maxPos : 0;
+    const shortMomentum = chg < 0 && maxNeg > 0 ? Math.abs(chg) / maxNeg : 0;
+    const longScore = longMomentum * 0.6 + volScore * 0.4;
+    const shortScore = shortMomentum * 0.6 + volScore * 0.4;
+    return { symbol, longScore, shortScore };
+  });
+
+  const long = rotate(
+    [...candidates].sort((a, b) => b.longScore - a.longScore).slice(0, Math.max(1, topN)),
+    rotationSec
+  );
+  const short = rotate(
+    [...candidates].sort((a, b) => b.shortScore - a.shortScore).slice(0, Math.max(1, topN)),
+    rotationSec
+  );
+  return { long, short };
+}
+
+async function pickPairBySignal(
+  lists: { long: ScanCandidate[]; short: ScanCandidate[] },
+  timeframe: string,
+  strategy: string,
+  strategyParams: any,
+): Promise<{ pair: string; signal: ReturnType<typeof getStrategySignal> } | null> {
+  const seen = new Set<string>();
+  const candidates = [...lists.long, ...lists.short].filter(c => {
+    if (seen.has(c.symbol)) return false;
+    seen.add(c.symbol);
+    return true;
+  });
+  if (!candidates.length) return null;
+
+  let best: { pair: string; signal: ReturnType<typeof getStrategySignal>; score: number } | null = null;
+  for (const c of candidates) {
+    const raw = await getKlines(c.symbol, timeframe, 200);
+    const closes = raw.map((k: number[]) => parseFloat(k[4].toString()));
+    if (closes.length < 30) continue;
+    const signal = getStrategySignal(strategy as any, closes, strategyParams);
+    if (signal.action === 'HOLD') continue;
+    const momentumScore = signal.action === 'BUY' ? c.longScore : c.shortScore;
+    const score = Math.abs(signal.score) * 0.7 + momentumScore * 0.3;
+    if (!best || score > best.score) best = { pair: c.symbol, signal, score };
+  }
+  return best ? { pair: best.pair, signal: best.signal } : null;
 }
