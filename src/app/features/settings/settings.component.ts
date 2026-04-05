@@ -491,32 +491,25 @@ export class SettingsComponent {
     this.testing.set(true);
     this.testResult.set(null);
     try {
-      const HOSTS = ['https://api.binance.com', 'https://api1.binance.com', 'https://api2.binance.com'];
-      let lastErr = '';
-      for (const host of HOSTS) {
-        try {
-          const ts = Date.now();
-          const qs = `timestamp=${ts}`;
-          const sig = await this.creds.sign(qs);
-          const res = await fetch(`${host}/api/v3/account?${qs}&signature=${sig}`, {
-            headers: { 'X-MBX-APIKEY': this.creds.apiKey },
-            signal: AbortSignal.timeout(8000),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data?.msg ?? `HTTP ${res.status}`);
-          // Get USDT balance
-          const usdt = data.balances?.find((b: any) => b.asset === 'USDT');
-          const bal = usdt ? parseFloat(usdt.free) : 0;
-          this.liveBalance.set(bal);
-          this.testResult.set(`Connected! Your USDT balance: $${bal.toFixed(2)}`);
-          this.testSuccess.set(true);
-          this.testing.set(false);
-          return;
-        } catch (e: any) { lastErr = e.message; }
+      // Use Vercel proxy — avoids CORS. Keys must be set in Vercel env vars.
+      const res = await fetch('/api/wallet/balances', { signal: AbortSignal.timeout(10000) });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        throw new Error(data.error ?? `HTTP ${res.status}`);
       }
-      throw new Error(lastErr || 'Connection failed');
+
+      const usdt = (data.balances ?? []).find((b: any) => b.asset === 'USDT');
+      const bal = usdt ? parseFloat(usdt.free ?? usdt.total) : 0;
+      this.liveBalance.set(bal);
+      this.testResult.set(`Connected! Your USDT balance: $${bal.toFixed(2)}`);
+      this.testSuccess.set(true);
     } catch (e: any) {
-      this.testResult.set(`Failed: ${e.message}. Check your API key and make sure Spot Trading is enabled.`);
+      let msg = e.message ?? 'Unknown error';
+      if (msg.includes('fetch') || msg.includes('network')) {
+        msg = 'Network error — make sure BINANCE_API_KEY and BINANCE_API_SECRET are set in your Vercel project environment variables.';
+      }
+      this.testResult.set(`Failed: ${msg}`);
       this.testSuccess.set(false);
     } finally {
       this.testing.set(false);

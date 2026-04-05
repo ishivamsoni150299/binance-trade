@@ -915,35 +915,20 @@ export class DashboardComponent implements OnInit {
         this.walletUpdatedAt.set(Date.now());
         return;
       }
-      // Live mode — fetch real balance directly from Binance in the browser
-      const HOSTS = ['https://api.binance.com', 'https://api1.binance.com', 'https://api2.binance.com'];
-      let lastErr = '';
-      for (const host of HOSTS) {
-        try {
-          const ts = Date.now();
-          const qs = `timestamp=${ts}`;
-          const sig = await this.creds.sign(qs);
-          const res = await fetch(`${host}/api/v3/account?${qs}&signature=${sig}`, {
-            headers: { 'X-MBX-APIKEY': this.creds.apiKey },
-            signal: AbortSignal.timeout(8000),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data?.msg ?? `HTTP ${res.status}`);
-          const balances: WalletBalance[] = (data.balances ?? [])
-            .filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
-            .map((b: any) => ({
-              asset: b.asset,
-              free: parseFloat(b.free),
-              locked: parseFloat(b.locked),
-              total: parseFloat(b.free) + parseFloat(b.locked),
-            }))
-            .sort((a: WalletBalance, b: WalletBalance) => b.total - a.total);
-          this.walletBalances.set(balances);
-          this.walletUpdatedAt.set(Date.now());
-          return;
-        } catch (e: any) { lastErr = e.message; }
-      }
-      throw new Error(lastErr);
+      // Live mode — use Vercel proxy (avoids browser CORS restriction on Binance signed API)
+      const res = await fetch('/api/wallet/balances', { signal: AbortSignal.timeout(10000) });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const balances: WalletBalance[] = (data.balances ?? [])
+        .map((b: any) => ({
+          asset: b.asset,
+          free: parseFloat(b.free ?? b.total ?? 0),
+          locked: parseFloat(b.locked ?? 0),
+          total: parseFloat(b.total ?? b.free ?? 0),
+        }))
+        .sort((a: WalletBalance, b: WalletBalance) => b.total - a.total);
+      this.walletBalances.set(balances);
+      this.walletUpdatedAt.set(data.timestamp ?? Date.now());
     } catch (e: any) {
       this.walletError.set(this.creds.hasKeys() ? `Could not load balance: ${e.message}` : 'Add API keys in Settings to see live balance.');
     } finally {
