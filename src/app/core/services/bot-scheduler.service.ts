@@ -99,7 +99,7 @@ export class BotSchedulerService implements OnDestroy {
     return {
       ...cfg,
       openPositions: this.tradeStore.openTrades().length,
-      dailyPnlPct: 0,
+      dailyPnlPct: this.tradeStore.dailyPnlPct(),
     };
   }
 }

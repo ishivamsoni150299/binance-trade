@@ -17,6 +17,9 @@ const TESTNET    = process.env['BINANCE_TESTNET'] === 'true';
 const PAIR       = process.env['BOT_PAIR'] ?? 'BTCUSDT';
 const TIMEFRAME  = process.env['BOT_TIMEFRAME'] ?? '1h';
 const PAPER      = process.env['BOT_PAPER_TRADING'] !== 'false'; // default paper=true
+const STRATEGY  = (process.env['BOT_STRATEGY'] ?? 'COMPOSITE').toUpperCase();
+const BUY_TH    = parseFloat(process.env['BOT_BUY_THRESHOLD'] ?? '0.5');
+const SELL_TH   = parseFloat(process.env['BOT_SELL_THRESHOLD'] ?? '-0.5');
 
 const BASE = TESTNET
   ? 'https://testnet.binance.vision/api'
@@ -170,6 +173,25 @@ function compositeSignal(closes: number[]): { action: 'BUY'|'SELL'|'HOLD', score
   return { action, score, rsi, macd, bb, ema };
 }
 
+function actionFromScore(score: number): 'BUY'|'SELL'|'HOLD' {
+  if (score >= BUY_TH) return 'BUY';
+  if (score <= SELL_TH) return 'SELL';
+  return 'HOLD';
+}
+
+function strategySignal(closes: number[]) {
+  const rsi = rsiScore(closes);
+  const macd = macdScore(closes);
+  const bb = bollingerScore(closes);
+  const ema = emaScore(closes);
+  if (STRATEGY === 'COMPOSITE') return compositeSignal(closes);
+  if (STRATEGY === 'RSI') return { action: actionFromScore(rsi), score: rsi, rsi, macd, bb, ema };
+  if (STRATEGY === 'MACD') return { action: actionFromScore(macd), score: macd, rsi, macd, bb, ema };
+  if (STRATEGY === 'BOLLINGER') return { action: actionFromScore(bb), score: bb, rsi, macd, bb, ema };
+  if (STRATEGY === 'EMA') return { action: actionFromScore(ema), score: ema, rsi, macd, bb, ema };
+  return compositeSignal(closes);
+}
+
 // Wallet snapshot (saved to wallet.json in repo)
 const WALLET_FILE = path.join(process.cwd(), 'wallet.json');
 
@@ -223,7 +245,7 @@ function saveTrade(trade: any): void {
 // Main
 async function main() {
   console.log(`\n=== BTrader Bot [${new Date().toISOString()}] ===`);
-  console.log(`Pair: ${PAIR} | Timeframe: ${TIMEFRAME} | Mode: ${PAPER ? 'PAPER' : 'LIVE'} | Testnet: ${TESTNET}`);
+  console.log(`Pair: ${PAIR} | Timeframe: ${TIMEFRAME} | Strategy: ${STRATEGY} | Mode: ${PAPER ? 'PAPER' : 'LIVE'} | Testnet: ${TESTNET}`);
 
   if (!PAPER && !API_KEY) {
     console.error('ERROR: BINANCE_API_KEY not set for live trading');
@@ -240,7 +262,7 @@ async function main() {
   console.log(`Current price: $${currentPrice.toLocaleString()}`);
 
   // 2. Signal
-  const signal = compositeSignal(closes);
+  const signal = strategySignal(closes);
   console.log(`Signal: ${signal.action} | Score: ${(signal.score * 100).toFixed(0)} | RSI:${(signal.rsi * 100).toFixed(0)} MACD:${(signal.macd * 100).toFixed(0)} BB:${(signal.bb * 100).toFixed(0)} EMA:${(signal.ema * 100).toFixed(0)}`);
 
   if (signal.action === 'HOLD') {
@@ -275,7 +297,7 @@ async function main() {
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     pair: PAIR,
     side: signal.action,
-    strategy: 'COMPOSITE',
+    strategy: STRATEGY,
     entryPrice: currentPrice,
     quantity,
     stopLossPrice: stopPrice,

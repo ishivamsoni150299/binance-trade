@@ -1,11 +1,7 @@
 ﻿import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getKlines, getAvailableBalance, placeOrder, getOpenOrders } from '../_lib/binance-client';
-import { compositeStrategy } from '../_lib/composite-strategy';
 import { checkRisk } from '../_lib/risk-manager';
-import { rsiScore } from '../_lib/indicators/rsi';
-import { macdScore } from '../_lib/indicators/macd';
-import { bollingerScore } from '../_lib/indicators/bollinger';
-import { emaScore } from '../_lib/indicators/ema';
+import { getStrategySignal } from '../_lib/strategy';
 
 const BOT_SECRET = process.env['BOT_SECRET'] ?? '';
 
@@ -29,6 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const {
       pair = 'BTCUSDT',
       timeframe = '1h',
+      strategy = 'COMPOSITE',
       strategyParams = {},
       riskParams = {},
       paperTrading = true,
@@ -44,16 +41,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ action: 'HOLD', reason: 'Insufficient data', closes: closes.length });
     }
 
-    // 2. Run composite strategy
-    const signal = compositeStrategy(closes, strategyParams);
-
-    // 3. Individual indicator values for UI display
-    const indicators = {
-      rsi: rsiScore(closes, strategyParams.rsiPeriod ?? 14, strategyParams.rsiOversold ?? 30, strategyParams.rsiOverbought ?? 70),
-      macd: macdScore(closes, strategyParams.macdFast ?? 12, strategyParams.macdSlow ?? 26, strategyParams.macdSignal ?? 9),
-      bollinger: bollingerScore(closes, strategyParams.bbPeriod ?? 20, strategyParams.bbMultiplier ?? 2),
-      ema: emaScore(closes, strategyParams.emaFast ?? 9, strategyParams.emaSlow ?? 21),
-    };
+    // 2. Run strategy (selected in UI)
+    const signal = getStrategySignal(strategy, closes, strategyParams);
+    const indicators = signal.indicators;
 
     const currentPrice = closes[closes.length - 1];
 
@@ -101,7 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         id: tradeId,
         pair,
         side: signal.action,
-        strategy: 'COMPOSITE',
+        strategy,
         entryPrice: currentPrice,
         quantity: risk.positionSize,
         fee: (risk.positionSize! * currentPrice) * 0.001,
@@ -119,7 +109,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         id: tradeId,
         pair,
         side: signal.action,
-        strategy: 'COMPOSITE',
+        strategy,
         entryPrice: parseFloat(order.fills?.[0]?.price ?? currentPrice),
         quantity: parseFloat(order.executedQty),
         fee: order.fills?.reduce((s: number, f: any) => s + parseFloat(f.commission), 0) ?? 0,

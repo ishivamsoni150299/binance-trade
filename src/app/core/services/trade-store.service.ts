@@ -40,6 +40,12 @@ export class TradeStoreService {
       .reduce((s, t) => s + (t.pnl ?? 0), 0);
   });
 
+  readonly dailyPnlPct = computed(() => {
+    const base = 10000; // Paper baseline
+    const pnl = this.dailyPnl();
+    return base > 0 ? (pnl / base) * 100 : 0;
+  });
+
   async init(): Promise<void> {
     this.db = await openDB(DB_NAME, 1, {
       upgrade(db) {
