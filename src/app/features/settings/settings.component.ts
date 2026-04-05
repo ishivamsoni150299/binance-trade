@@ -1,8 +1,10 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ConfigService } from '../../core/services/config.service';
 import { CredentialsService } from '../../core/services/credentials.service';
 import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
+
+type SetupStep = 'idle' | 'running' | 'done' | 'error';
 
 @Component({
   selector: 'app-settings',
@@ -11,197 +13,160 @@ import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
   template: `
     <div class="page">
       <div class="page-header">
-        <div>
-          <h1>Settings</h1>
-          <p class="subtitle">All data stays in your browser — keys are never sent to any server</p>
-        </div>
+        <h1>Settings</h1>
+        <p class="subtitle">One-click setup — enter your keys and we handle everything else</p>
       </div>
 
-      <!-- ── TRADING MODE ─────────────────────────────────── -->
-      <div class="section">
-        <div class="section-title">Trading Mode</div>
-        <div class="mode-cards">
+      <!-- ── ONE-CLICK SETUP ──────────────────────────────────── -->
+      <div class="section setup-section">
+        <div class="section-title">
+          Connect Your Binance Account
+          @if (setupStep() === 'done') { <span class="badge-ok">Connected</span> }
+        </div>
 
-          <div class="mode-card" [class.active]="creds.isPaper()" (click)="setPaper()">
-            <div class="mc-icon paper-icon">P</div>
-            <div class="mc-body">
-              <div class="mc-title">Paper Trading</div>
-              <div class="mc-desc">Simulated $10,000 — no real money at risk. Perfect for testing.</div>
+        @if (setupStep() === 'done') {
+          <div class="done-box">
+            <div class="done-icon">✓</div>
+            <div class="done-body">
+              <div class="done-title">All set! Bot is now trading with your real Binance account.</div>
+              <div class="done-sub">The bot runs every 5 minutes automatically via GitHub Actions. Check the Dashboard to see your real balance and signals.</div>
             </div>
-            <div class="mc-check" [class.checked]="creds.isPaper()">
-              {{ creds.isPaper() ? '✓' : '' }}
+            <button class="btn-reconfig" (click)="setupStep.set('idle')">Reconfigure</button>
+          </div>
+        } @else {
+
+          <!-- Step 1: Trading mode -->
+          <div class="setup-step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Choose trading mode</div>
+              <div class="mode-row">
+                <div class="mode-opt" [class.active]="!isLive()" (click)="isLive.set(false)">
+                  <div class="mo-check" [class.on]="!isLive()"></div>
+                  <div>
+                    <div class="mo-title">Paper Trading</div>
+                    <div class="mo-sub">Simulated — no real money</div>
+                  </div>
+                </div>
+                <div class="mode-opt live-opt" [class.active]="isLive()" (click)="isLive.set(true)">
+                  <div class="mo-check live-check" [class.on]="isLive()"></div>
+                  <div>
+                    <div class="mo-title">Live Trading <span class="live-tag">REAL MONEY</span></div>
+                    <div class="mo-sub">Uses your Binance {{ balanceHint() }}</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="mode-card" [class.active]="creds.isLive()" [class.live-card]="creds.isLive()"
-               (click)="setLive()">
-            <div class="mc-icon live-icon">L</div>
-            <div class="mc-body">
-              <div class="mc-title">Live Trading <span class="live-badge">REAL MONEY</span></div>
-              <div class="mc-desc">Uses your Binance API key. Requires keys below. Start small.</div>
+          <!-- Step 2: Binance keys -->
+          <div class="setup-step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">
+                Binance API Keys
+                <span class="step-hint">From binance.com → Profile → API Management</span>
+              </div>
+              <div class="input-row">
+                <input class="setup-input" type="text" placeholder="API Key"
+                  [ngModel]="apiKey()" (ngModelChange)="apiKey.set($event)"
+                  autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="input-row">
+                <input class="setup-input" [type]="showSecret() ? 'text' : 'password'"
+                  placeholder="API Secret"
+                  [ngModel]="apiSecret()" (ngModelChange)="apiSecret.set($event)"
+                  autocomplete="off" spellcheck="false" />
+                <button class="btn-vis" (click)="showSecret.set(!showSecret())">{{ showSecret() ? 'Hide' : 'Show' }}</button>
+              </div>
+              <div class="key-rules">
+                Enable only: <strong>Enable Spot &amp; Margin Trading</strong> — never enable withdrawals
+              </div>
             </div>
-            <div class="mc-check" [class.checked]="creds.isLive()">
-              {{ creds.isLive() ? '✓' : '' }}
+          </div>
+
+          <!-- Step 3: GitHub token -->
+          <div class="setup-step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">
+                GitHub Token
+                <span class="step-hint">Used once to auto-configure your bot</span>
+              </div>
+              <div class="input-row">
+                <input class="setup-input" [type]="showToken() ? 'text' : 'password'"
+                  placeholder="GitHub Personal Access Token (ghp_...)"
+                  [ngModel]="githubToken()" (ngModelChange)="githubToken.set($event)"
+                  autocomplete="off" spellcheck="false" />
+                <button class="btn-vis" (click)="showToken.set(!showToken())">{{ showToken() ? 'Hide' : 'Show' }}</button>
+              </div>
+              <button class="btn-get-token" (click)="openTokenPage()">
+                Get GitHub Token →
+              </button>
+              <div class="token-hint">
+                When creating the token: select <strong>repo</strong> scope only. Token is used once and never stored.
+              </div>
             </div>
           </div>
 
-        </div>
-
-        @if (!creds.hasKeys() && creds.creds().isLive) {
-          <div class="warn-box">Enter your API keys below to enable live trading.</div>
-        }
-        @if (creds.isLive()) {
-          <div class="live-warn">
-            You are trading with REAL MONEY. Losses are real. Never risk more than you can afford to lose.
-          </div>
-        }
-      </div>
-
-      <!-- ── API KEYS ──────────────────────────────────────── -->
-      <div class="section">
-        <div class="section-title">Binance API Keys
-          <span class="secure-badge">Stored locally in your browser only</span>
-        </div>
-
-        @if (creds.hasKeys()) {
-          <div class="keys-saved">
-            <span class="ks-icon">K</span>
-            <div class="ks-info">
-              <div class="ks-title">API Keys saved</div>
-              <div class="ks-sub">Key: {{ maskedKey() }}</div>
+          <!-- Risk (only for live) -->
+          @if (isLive()) {
+            <div class="setup-step">
+              <div class="step-num">4</div>
+              <div class="step-body">
+                <div class="step-title">Risk Settings <span class="step-hint">Safe defaults pre-filled for $77 USDT</span></div>
+                <div class="risk-row">
+                  <div class="risk-item">
+                    <label>Position Size</label>
+                    <div class="risk-val">{{ positionSizePct() }}% = ~{{ positionDollar() }}</div>
+                    <input type="range" min="10" max="30" step="1" class="slider"
+                      [ngModel]="positionSizePct()" (ngModelChange)="positionSizePct.set(+$event)" />
+                  </div>
+                  <div class="risk-item">
+                    <label>Stop Loss</label>
+                    <div class="risk-val red">{{ stopLossPct() }}%</div>
+                    <input type="range" min="0.5" max="5" step="0.5" class="slider red"
+                      [ngModel]="stopLossPct()" (ngModelChange)="stopLossPct.set(+$event)" />
+                  </div>
+                  <div class="risk-item">
+                    <label>Take Profit</label>
+                    <div class="risk-val green">{{ takeProfitPct() }}%</div>
+                    <input type="range" min="1" max="10" step="0.5" class="slider green"
+                      [ngModel]="takeProfitPct()" (ngModelChange)="takeProfitPct.set(+$event)" />
+                  </div>
+                </div>
+              </div>
             </div>
-            <button class="btn-clear" (click)="clearKeys()">Remove Keys</button>
-          </div>
-        }
-
-        <div class="form-group">
-          <label>API Key</label>
-          <input type="text" [(ngModel)]="apiKeyInput" placeholder="Paste your Binance API Key here"
-            class="key-input" autocomplete="off" spellcheck="false" />
-        </div>
-        <div class="form-group">
-          <label>API Secret
-            <span class="label-hint">Hidden after saving</span>
-          </label>
-          <input [type]="showSecret() ? 'text' : 'password'" [(ngModel)]="apiSecretInput"
-            placeholder="Paste your API Secret here"
-            class="key-input" autocomplete="off" spellcheck="false" />
-          <button class="btn-toggle-vis" (click)="showSecret.set(!showSecret())">
-            {{ showSecret() ? 'Hide' : 'Show' }}
-          </button>
-        </div>
-
-        <div class="key-actions">
-          <button class="btn-save" (click)="saveKeys()" [disabled]="!apiKeyInput || !apiSecretInput">
-            Save API Keys
-          </button>
-          <button class="btn-test" (click)="testConnection()" [disabled]="testing()">
-            {{ testing() ? 'Loading...' : 'Check Bot Wallet' }}
-          </button>
-        </div>
-
-        @if (testResult()) {
-          <div class="test-result" [class.success]="testSuccess()" [class.fail]="!testSuccess()">
-            {{ testResult() }}
-          </div>
-        }
-
-        <div class="key-instructions">
-          <div class="ki-title">How it works — important to understand:</div>
-          <div class="arch-box">
-            <div class="arch-row">
-              <span class="arch-tag ok">GitHub Actions</span>
-              <span class="arch-desc">Runs your bot every 5 min → places real Binance orders → saves balance to wallet.json</span>
-            </div>
-            <div class="arch-row">
-              <span class="arch-tag ok">Browser</span>
-              <span class="arch-desc">Shows live prices + signals + reads wallet.json from GitHub</span>
-            </div>
-            <div class="arch-row">
-              <span class="arch-tag bad">Vercel</span>
-              <span class="arch-desc">Blocked by Binance (error 451) — cannot place orders</span>
-            </div>
-          </div>
-          <div class="ki-title" style="margin-top:12px">Setup steps:</div>
-          <ol class="ki-steps">
-            <li>Go to <strong>Binance → Profile → API Management</strong> → Create API key</li>
-            <li>Enable only <strong>"Enable Spot & Margin Trading"</strong> — never withdrawals</li>
-            <li>Go to your <strong>GitHub repo → Settings → Secrets → Actions</strong></li>
-            <li>Add secret <strong>BINANCE_API_KEY</strong> and <strong>BINANCE_API_SECRET</strong></li>
-            <li>Go to <strong>GitHub repo → Settings → Variables → Actions</strong></li>
-            <li>Set <strong>BOT_PAPER_TRADING = false</strong> to enable live trading</li>
-            <li>Click <strong>"Test Connection"</strong> below to verify the bot has run successfully</li>
-          </ol>
-        </div>
-      </div>
-
-      <!-- ── RISK SETTINGS ─────────────────────────────────── -->
-      <div class="section">
-        <div class="section-title">Risk Settings
-          @if (creds.isLive()) {
-            <span class="live-badge-sm">Live Mode</span>
           }
-        </div>
 
-        <div class="risk-grid">
+          <!-- Setup button -->
+          <button class="btn-setup" (click)="runSetup()"
+            [disabled]="!canSetup() || setupStep() === 'running'">
+            @if (setupStep() === 'running') {
+              <span class="spinner"></span> Configuring everything...
+            } @else {
+              {{ isLive() ? 'Connect & Start Live Trading' : 'Connect & Start Paper Trading' }}
+            }
+          </button>
 
-          <div class="risk-card">
-            <div class="rc-label">Position Size</div>
-            <div class="rc-val">{{ cfg().riskParams.positionSizePct }}%</div>
-            <input type="range" min="5" max="30" step="1" class="slider green"
-              [ngModel]="cfg().riskParams.positionSizePct"
-              (ngModelChange)="config.updateRisk({positionSizePct: +$event})">
-            <div class="rc-hint">= {{ positionUsd() }} per trade</div>
-          </div>
+          @if (setupStep() === 'error') {
+            <div class="error-box">{{ setupError() }}</div>
+          }
 
-          <div class="risk-card">
-            <div class="rc-label">Stop Loss</div>
-            <div class="rc-val red">{{ cfg().riskParams.stopLossPct }}%</div>
-            <input type="range" min="0.5" max="5" step="0.5" class="slider red"
-              [ngModel]="cfg().riskParams.stopLossPct"
-              (ngModelChange)="config.updateRisk({stopLossPct: +$event})">
-            <div class="rc-hint">Max loss: {{ maxLossUsd() }} per trade</div>
+          <div class="what-happens">
+            <div class="wh-title">What happens when you click:</div>
+            <div class="wh-row"><span class="wh-dot ok"></span>Your API keys are saved securely to GitHub</div>
+            <div class="wh-row"><span class="wh-dot ok"></span>Bot switches to {{ isLive() ? 'LIVE' : 'PAPER' }} mode</div>
+            <div class="wh-row"><span class="wh-dot ok"></span>First bot cycle triggers immediately</div>
+            <div class="wh-row"><span class="wh-dot ok"></span>Dashboard shows your real {{ isLive() ? 'Binance' : 'simulated' }} balance</div>
+            <div class="wh-row"><span class="wh-dot ok"></span>Bot runs automatically every 5 min 24/7</div>
           </div>
-
-          <div class="risk-card">
-            <div class="rc-label">Take Profit</div>
-            <div class="rc-val green">{{ cfg().riskParams.takeProfitPct }}%</div>
-            <input type="range" min="1" max="10" step="0.5" class="slider green"
-              [ngModel]="cfg().riskParams.takeProfitPct"
-              (ngModelChange)="config.updateRisk({takeProfitPct: +$event})">
-            <div class="rc-hint">Max gain: {{ maxGainUsd() }} per trade</div>
-          </div>
-
-          <div class="risk-card">
-            <div class="rc-label">Daily Loss Limit</div>
-            <div class="rc-val red">{{ cfg().riskParams.maxDailyLossPct }}%</div>
-            <input type="range" min="1" max="15" step="1" class="slider red"
-              [ngModel]="cfg().riskParams.maxDailyLossPct"
-              (ngModelChange)="config.updateRisk({maxDailyLossPct: +$event})">
-            <div class="rc-hint">Bot pauses if daily loss exceeds this</div>
-          </div>
-
-        </div>
-
-        <div class="rr-summary">
-          <div class="rr-item">
-            <span class="rr-label">Risk : Reward</span>
-            <span class="rr-val">1 : {{ (cfg().riskParams.takeProfitPct / cfg().riskParams.stopLossPct).toFixed(1) }}</span>
-          </div>
-          <div class="rr-item">
-            <span class="rr-label">Break-even win rate</span>
-            <span class="rr-val">{{ breakEvenWinRate().toFixed(0) }}%</span>
-          </div>
-          <div class="rr-item">
-            <span class="rr-label">Max open positions</span>
-            <span class="rr-val">{{ cfg().riskParams.maxOpenPositions }}</span>
-          </div>
-        </div>
+        }
       </div>
 
       <!-- ── BOT INTERVAL ─────────────────────────────────── -->
       <div class="section">
-        <div class="section-title">Bot Check Interval (Browser)</div>
+        <div class="section-title">Browser Bot Interval</div>
         <div class="interval-row">
           @for (opt of intervalOptions; track opt.value) {
             <button class="iv-btn" [class.active]="cfg().botIntervalSec === opt.value"
@@ -210,7 +175,7 @@ import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
             </button>
           }
         </div>
-        <div class="iv-hint">How often the bot checks for signals when you have the app open.</div>
+        <div class="iv-hint">How often the bot checks for signals while you have the app open.</div>
       </div>
 
       <!-- ── DANGER ZONE ───────────────────────────────────── -->
@@ -219,228 +184,210 @@ import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
         <div class="danger-row">
           <div>
             <div class="dr-title">Reset All Settings</div>
-            <div class="dr-desc">Clears all config and resets to defaults. Does not remove API keys.</div>
+            <div class="dr-desc">Clears config and resets to defaults.</div>
           </div>
-          <button class="btn-danger" (click)="resetConfig()">Reset Config</button>
-        </div>
-        <div class="danger-row">
-          <div>
-            <div class="dr-title">Remove API Keys</div>
-            <div class="dr-desc">Deletes stored keys from browser. Bot switches to paper mode.</div>
-          </div>
-          <button class="btn-danger" (click)="clearKeys()">Remove Keys</button>
+          <button class="btn-danger" (click)="resetConfig()">Reset</button>
         </div>
       </div>
-
     </div>
   `,
   styles: [`
-    .page { padding: 24px; max-width: 900px; animation: fadeIn 0.2s ease-out; }
-    .page-header { margin-bottom: 24px; }
+    .page { padding: 24px; max-width: 760px; animation: fadeIn 0.2s ease-out; }
+    .page-header { margin-bottom: 20px; }
     h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
-    .subtitle { font-size: 12px; color: var(--text-muted); margin: 0; }
+    .subtitle { font-size: 13px; color: var(--text-muted); margin: 0; }
 
-    /* Section */
     .section {
       background: var(--bg-card); border: 1px solid var(--border);
       border-radius: 12px; padding: 20px; margin-bottom: 16px;
     }
+    .setup-section { border-color: rgba(59,130,246,0.3); }
     .section-title {
       font-size: 12px; font-weight: 700; color: var(--text-secondary);
       text-transform: uppercase; letter-spacing: 0.07em;
-      margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+      margin-bottom: 18px; display: flex; align-items: center; gap: 8px;
     }
-    .secure-badge {
-      font-size: 10px; background: rgba(38,166,154,0.12); color: var(--green);
+    .badge-ok {
+      font-size: 10px; background: rgba(38,166,154,0.15); color: var(--green);
       border: 1px solid rgba(38,166,154,0.3); padding: 2px 8px; border-radius: 10px;
-      text-transform: none; letter-spacing: 0; font-weight: 600;
-    }
-    .live-badge-sm {
-      font-size: 10px; background: rgba(239,83,80,0.1); color: var(--red);
-      border: 1px solid rgba(239,83,80,0.3); padding: 2px 8px; border-radius: 10px;
       text-transform: none; letter-spacing: 0; font-weight: 700;
     }
 
-    /* Mode cards */
-    .mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-    .mode-card {
-      display: flex; align-items: center; gap: 14px;
-      border: 2px solid var(--border); border-radius: 10px; padding: 16px;
-      cursor: pointer; transition: all 0.15s;
+    /* Done state */
+    .done-box {
+      display: flex; align-items: center; gap: 16px;
+      background: rgba(38,166,154,0.06); border: 1px solid rgba(38,166,154,0.25);
+      border-radius: 10px; padding: 16px 20px;
     }
-    .mode-card:hover { border-color: var(--blue); background: var(--bg-hover); }
-    .mode-card.active { border-color: var(--blue); background: rgba(59,130,246,0.06); }
-    .mode-card.live-card.active { border-color: var(--red); background: rgba(239,83,80,0.06); }
-    .mc-icon {
-      width: 40px; height: 40px; border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 800; flex-shrink: 0;
+    .done-icon { font-size: 28px; color: var(--green); flex-shrink: 0; }
+    .done-body { flex: 1; }
+    .done-title { font-size: 14px; font-weight: 700; color: var(--green); }
+    .done-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+    .btn-reconfig {
+      padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; font-size: 12px;
     }
-    .paper-icon { background: rgba(59,130,246,0.15); color: var(--blue); }
-    .live-icon { background: rgba(239,83,80,0.15); color: var(--red); }
-    .mc-body { flex: 1; }
-    .mc-title { font-size: 14px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
-    .mc-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-    .mc-check {
-      width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 12px; font-weight: 700; flex-shrink: 0;
+
+    /* Steps */
+    .setup-step {
+      display: flex; gap: 14px; margin-bottom: 20px;
+      padding-bottom: 20px; border-bottom: 1px solid var(--border);
     }
-    .mc-check.checked { background: var(--blue); border-color: var(--blue); color: white; }
-    .live-badge {
+    .setup-step:last-of-type { border-bottom: none; }
+    .step-num {
+      width: 28px; height: 28px; border-radius: 50%; background: var(--blue);
+      color: white; font-size: 13px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .step-body { flex: 1; }
+    .step-title {
+      font-size: 14px; font-weight: 700; color: var(--text-primary);
+      margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+    }
+    .step-hint { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+
+    /* Mode selector */
+    .mode-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .mode-opt {
+      display: flex; align-items: center; gap: 12px; padding: 14px;
+      border: 2px solid var(--border); border-radius: 10px; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mode-opt:hover { border-color: var(--blue); }
+    .mode-opt.active { border-color: var(--blue); background: rgba(59,130,246,0.06); }
+    .live-opt.active { border-color: var(--red); background: rgba(239,83,80,0.05); }
+    .mo-check {
+      width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border);
+      flex-shrink: 0; transition: all 0.15s;
+    }
+    .mo-check.on { background: var(--blue); border-color: var(--blue); }
+    .live-check.on { background: var(--red); border-color: var(--red); }
+    .mo-title { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+    .mo-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .live-tag {
       font-size: 9px; background: rgba(239,83,80,0.15); color: var(--red);
-      padding: 1px 6px; border-radius: 4px; font-weight: 700;
-    }
-    .warn-box {
-      background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
-      color: var(--yellow); border-radius: 8px; padding: 10px 14px; font-size: 13px;
-    }
-    .live-warn {
-      background: rgba(239,83,80,0.08); border: 1px solid rgba(239,83,80,0.3);
-      color: var(--red); border-radius: 8px; padding: 10px 14px; font-size: 12px;
-      font-weight: 600; margin-top: 8px;
+      padding: 1px 5px; border-radius: 4px; font-weight: 800;
     }
 
-    /* API keys */
-    .keys-saved {
-      display: flex; align-items: center; gap: 12px;
-      background: rgba(38,166,154,0.08); border: 1px solid rgba(38,166,154,0.25);
-      border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
-    }
-    .ks-icon {
-      width: 32px; height: 32px; border-radius: 8px; background: var(--green);
-      color: white; font-size: 12px; font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .ks-info { flex: 1; }
-    .ks-title { font-size: 13px; font-weight: 600; color: var(--green); }
-    .ks-sub { font-size: 12px; color: var(--text-muted); }
-    .btn-clear {
-      padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(239,83,80,0.4);
-      background: transparent; color: var(--red); cursor: pointer; font-size: 12px; font-weight: 600;
-    }
-
-    .form-group { margin-bottom: 12px; position: relative; }
-    label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
-    .label-hint { font-weight: 400; color: var(--text-muted); margin-left: 6px; }
-    .key-input {
-      width: 100%; padding: 10px 14px; border-radius: 8px;
+    /* Inputs */
+    .input-row { display: flex; gap: 8px; margin-bottom: 8px; position: relative; }
+    .setup-input {
+      flex: 1; padding: 10px 14px; border-radius: 8px;
       border: 1px solid var(--border); background: var(--bg-primary);
-      color: var(--text-primary); font-size: 13px; font-family: monospace;
-      box-sizing: border-box; outline: none;
+      color: var(--text-primary); font-size: 13px; font-family: monospace; outline: none;
     }
-    .key-input:focus { border-color: var(--blue); }
-    .btn-toggle-vis {
-      position: absolute; right: 10px; top: 32px;
-      background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px;
+    .setup-input:focus { border-color: var(--blue); }
+    .btn-vis {
+      padding: 0 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-hover); color: var(--text-muted); cursor: pointer; font-size: 12px;
     }
+    .key-rules { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    .btn-get-token {
+      display: inline-block; margin: 6px 0; padding: 6px 12px; border-radius: 6px;
+      border: 1px solid var(--blue); background: rgba(59,130,246,0.08);
+      color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700;
+    }
+    .token-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 
-    .key-actions { display: flex; gap: 10px; margin-bottom: 12px; }
-    .btn-save {
-      padding: 10px 20px; border-radius: 8px; border: none;
-      background: var(--blue); color: white; cursor: pointer; font-size: 13px; font-weight: 700;
-    }
-    .btn-save:disabled { opacity: 0.4; cursor: not-allowed; }
-    .btn-test {
-      padding: 10px 20px; border-radius: 8px; border: 1px solid var(--border);
-      background: var(--bg-hover); color: var(--text-secondary); cursor: pointer;
-      font-size: 13px; font-weight: 600;
-    }
-    .btn-test:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    .test-result {
-      padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-bottom: 14px;
-    }
-    .test-result.success { background: rgba(38,166,154,0.1); color: var(--green); border: 1px solid rgba(38,166,154,0.3); }
-    .test-result.fail { background: rgba(239,83,80,0.08); color: var(--red); border: 1px solid rgba(239,83,80,0.3); }
-
-    .key-instructions {
-      background: var(--bg-primary); border: 1px solid var(--border);
-      border-radius: 8px; padding: 14px; margin-top: 4px;
-    }
-    .ki-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; }
-    .ki-steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
-    .ki-steps li { font-size: 12px; color: var(--text-secondary); }
-    .ki-steps strong { color: var(--text-primary); }
-    .arch-box { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-    .arch-row { display: flex; align-items: flex-start; gap: 10px; }
-    .arch-tag {
-      font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 6px;
-      white-space: nowrap; flex-shrink: 0; margin-top: 1px;
-    }
-    .arch-tag.ok { background: rgba(38,166,154,0.15); color: var(--green); border: 1px solid rgba(38,166,154,0.3); }
-    .arch-tag.bad { background: rgba(239,83,80,0.1); color: var(--red); border: 1px solid rgba(239,83,80,0.3); }
-    .arch-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
-
-    /* Risk grid */
-    .risk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
-    .risk-card {
-      background: var(--bg-primary); border: 1px solid var(--border);
-      border-radius: 10px; padding: 14px;
-    }
-    .rc-label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-    .rc-val { font-size: 22px; font-weight: 800; color: var(--text-primary); margin-bottom: 10px; }
-    .rc-val.green { color: var(--green); }
-    .rc-val.red { color: var(--red); }
-    .rc-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+    /* Risk */
+    .risk-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .risk-item { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+    label { display: block; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .risk-val { font-size: 20px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px; }
+    .risk-val.red { color: var(--red); }
+    .risk-val.green { color: var(--green); }
     .slider { width: 100%; accent-color: var(--blue); cursor: pointer; }
-    .slider.green { accent-color: var(--green); }
     .slider.red { accent-color: var(--red); }
+    .slider.green { accent-color: var(--green); }
 
-    .rr-summary {
-      display: flex; gap: 16px;
-      background: var(--bg-primary); border: 1px solid var(--border);
-      border-radius: 8px; padding: 12px 16px;
+    /* Setup button */
+    .btn-setup {
+      width: 100%; padding: 14px; border-radius: 10px; border: none;
+      background: var(--blue); color: white; font-size: 15px; font-weight: 800;
+      cursor: pointer; margin: 6px 0 16px; display: flex; align-items: center;
+      justify-content: center; gap: 10px; transition: all 0.15s;
     }
-    .rr-item { display: flex; flex-direction: column; gap: 2px; }
-    .rr-label { font-size: 11px; color: var(--text-muted); }
-    .rr-val { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+    .btn-setup:hover:not(:disabled) { background: #2563eb; }
+    .btn-setup:disabled { opacity: 0.5; cursor: not-allowed; }
+    .spinner {
+      width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-box {
+      background: rgba(239,83,80,0.08); border: 1px solid rgba(239,83,80,0.3);
+      color: var(--red); border-radius: 8px; padding: 12px 14px;
+      font-size: 13px; margin-bottom: 12px;
+    }
+
+    /* What happens */
+    .what-happens {
+      background: var(--bg-primary); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 14px;
+    }
+    .wh-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .wh-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+    .wh-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .wh-dot.ok { background: var(--green); }
 
     /* Interval */
     .interval-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
     .iv-btn {
       padding: 7px 16px; border-radius: 20px; border: 1px solid var(--border);
-      background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; font-size: 12px; font-weight: 600;
+      background: var(--bg-hover); color: var(--text-secondary); cursor: pointer;
+      font-size: 12px; font-weight: 600;
     }
     .iv-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
     .iv-hint { font-size: 12px; color: var(--text-muted); }
 
     /* Danger */
-    .danger-section { border-color: rgba(239,83,80,0.25); }
-    .danger-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 0; border-bottom: 1px solid var(--border);
-    }
-    .danger-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .danger-section { border-color: rgba(239,83,80,0.2); }
+    .danger-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
     .dr-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
     .dr-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
     .btn-danger {
       padding: 8px 16px; border-radius: 8px; border: 1px solid rgba(239,83,80,0.4);
       background: transparent; color: var(--red); cursor: pointer; font-size: 12px; font-weight: 600;
-      white-space: nowrap; flex-shrink: 0;
+      flex-shrink: 0;
     }
-    .btn-danger:hover { background: rgba(239,83,80,0.08); }
 
-    @media (max-width: 768px) {
-      .mode-cards { grid-template-columns: 1fr; }
-      .risk-grid { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 600px) {
+      .mode-row { grid-template-columns: 1fr; }
+      .risk-row { grid-template-columns: 1fr; }
     }
   `]
 })
 export class SettingsComponent {
-  apiKeyInput = '';
-  apiSecretInput = '';
-  showSecret = signal(false);
-  testing = signal(false);
-  testResult = signal<string | null>(null);
-  testSuccess = signal(false);
-  liveBalance = signal(77); // will be updated after connection test
+  // Setup form
+  apiKey      = signal('');
+  apiSecret   = signal('');
+  githubToken = signal('');
+  showSecret  = signal(false);
+  showToken   = signal(false);
+  isLive      = signal(false);
+
+  // Risk
+  positionSizePct = signal(15);
+  stopLossPct     = signal(1.5);
+  takeProfitPct   = signal(3);
+
+  // Setup state
+  setupStep  = signal<SetupStep>('idle');
+  setupError = signal('');
+
+  readonly canSetup = computed(() =>
+    !!this.apiKey().trim() && !!this.apiSecret().trim() && !!this.githubToken().trim()
+  );
+
+  readonly balanceHint    = computed(() => this.isLive() ? '$77 USDT' : '$10,000 simulated');
+  readonly positionDollar = computed(() => '$' + (77 * this.positionSizePct() / 100).toFixed(2));
 
   readonly intervalOptions = [
-    { value: 15, label: '15s' },
-    { value: 30, label: '30s' },
-    { value: 60, label: '1m' },
-    { value: 300, label: '5m' },
+    { value: 15,  label: '15s' },
+    { value: 30,  label: '30s' },
+    { value: 60,  label: '1m'  },
+    { value: 300, label: '5m'  },
   ];
 
   constructor(
@@ -451,102 +398,61 @@ export class SettingsComponent {
 
   cfg() { return this.config.config(); }
 
-  balanceEstimate(): number {
-    return this.creds.isLive() ? this.liveBalance() : 10000;
+  openTokenPage(): void {
+    window.open(
+      'https://github.com/settings/tokens/new?scopes=repo&description=BTrader+Bot+Setup',
+      '_blank'
+    );
   }
 
-  positionUsd(): string {
-    return '$' + ((this.balanceEstimate() * this.cfg().riskParams.positionSizePct) / 100).toFixed(2);
-  }
-
-  maxLossUsd(): string {
-    const pos = this.balanceEstimate() * this.cfg().riskParams.positionSizePct / 100;
-    return '$' + (pos * this.cfg().riskParams.stopLossPct / 100).toFixed(2);
-  }
-
-  maxGainUsd(): string {
-    const pos = this.balanceEstimate() * this.cfg().riskParams.positionSizePct / 100;
-    return '$' + (pos * this.cfg().riskParams.takeProfitPct / 100).toFixed(2);
-  }
-
-  breakEvenWinRate(): number {
-    const sl = this.cfg().riskParams.stopLossPct;
-    const tp = this.cfg().riskParams.takeProfitPct;
-    return (sl / (sl + tp)) * 100;
-  }
-
-  maskedKey(): string {
-    const k = this.creds.apiKey;
-    if (!k || k.length < 8) return '****';
-    return k.slice(0, 6) + '****' + k.slice(-4);
-  }
-
-  saveKeys(): void {
-    this.creds.save({ apiKey: this.apiKeyInput.trim(), apiSecret: this.apiSecretInput.trim() });
-    this.apiKeyInput = '';
-    this.apiSecretInput = '';
-    this.testResult.set('Keys saved. Click "Test Connection" to verify.');
-    this.testSuccess.set(true);
-  }
-
-  clearKeys(): void {
-    if (this.bot.status() === 'running') this.bot.stop();
-    this.creds.clear();
-    this.config.updateRisk({ paperTrading: true });
-    this.testResult.set(null);
-  }
-
-  setPaper(): void {
-    this.config.updateRisk({ paperTrading: true });
-    this.creds.save({ isLive: false });
-    if (this.bot.status() === 'running') { this.bot.stop(); this.bot.start(); }
-  }
-
-  setLive(): void {
-    if (!this.creds.hasKeys()) {
-      this.testResult.set('Please enter and save your API keys first.');
-      this.testSuccess.set(false);
-      return;
-    }
-    this.config.updateRisk({ paperTrading: false });
-    this.creds.save({ isLive: true });
-    if (this.bot.status() === 'running') { this.bot.stop(); this.bot.start(); }
-  }
-
-  async testConnection(): Promise<void> {
-    this.testing.set(true);
-    this.testResult.set(null);
+  async runSetup(): Promise<void> {
+    this.setupStep.set('running');
+    this.setupError.set('');
     try {
-      // Read wallet.json committed by GitHub Actions bot (not blocked by Binance)
-      const res = await fetch(
-        'https://raw.githubusercontent.com/ishivamsoni150299/binance-trade/main/wallet.json?t=' + Date.now(),
-        { signal: AbortSignal.timeout(10000) }
-      );
-      if (!res.ok) throw new Error(`Could not load wallet.json from GitHub (HTTP ${res.status})`);
+      const res = await fetch('/api/setup/github', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          githubToken:     this.githubToken().trim(),
+          binanceApiKey:   this.apiKey().trim(),
+          binanceApiSecret: this.apiSecret().trim(),
+          paperTrading:    !this.isLive(),
+          positionSizePct: this.positionSizePct(),
+          stopLossPct:     this.stopLossPct(),
+          takeProfitPct:   this.takeProfitPct(),
+        }),
+      });
+
       const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Setup failed');
 
-      const usdt = (data.balances ?? []).find((b: any) => b.asset === 'USDT');
-      const bal = usdt ? parseFloat(usdt.total ?? usdt.free) : 0;
-      const isPaper = data.isPaper ?? true;
-      const updatedAgo = data.updatedAt ? Math.round((Date.now() - data.updatedAt) / 60000) : null;
+      // Save locally too
+      this.creds.save({
+        apiKey:    this.apiKey().trim(),
+        apiSecret: this.apiSecret().trim(),
+        isLive:    this.isLive(),
+      });
+      this.config.updateRisk({ paperTrading: !this.isLive() });
 
-      this.liveBalance.set(bal);
-      this.testResult.set(
-        `${isPaper ? 'Paper' : 'Live'} wallet loaded — USDT: $${bal.toFixed(2)}` +
-        (updatedAgo !== null ? ` (updated ${updatedAgo}m ago by bot)` : '')
-      );
-      this.testSuccess.set(true);
+      // Clear sensitive fields from memory
+      this.githubToken.set('');
+      this.apiKey.set('');
+      this.apiSecret.set('');
+
+      // Restart browser bot
+      if (this.bot.status() === 'running') { this.bot.stop(); this.bot.start(); }
+
+      this.setupStep.set('done');
     } catch (e: any) {
-      this.testResult.set(`Failed: ${e.message ?? 'Unknown error'}`);
-      this.testSuccess.set(false);
-    } finally {
-      this.testing.set(false);
+      this.setupError.set(e.message ?? 'Unknown error. Check your GitHub token has repo scope.');
+      this.setupStep.set('error');
     }
   }
 
   resetConfig(): void {
     if (confirm('Reset all bot settings to defaults?')) {
       this.config.reset();
+      this.bot.stop();
     }
   }
 }
