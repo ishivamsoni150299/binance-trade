@@ -17,7 +17,7 @@ on:
       paper_trading:
         description: 'Paper trading? (true/false)'
         required: false
-        default: 'true'
+        default: ''
 
 jobs:
   run-bot:

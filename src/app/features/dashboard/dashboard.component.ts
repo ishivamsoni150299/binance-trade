@@ -124,10 +124,11 @@ import { FormsModule } from '@angular/forms';
         <app-stat-card label="Open Positions"
           [value]="tradeStore.openTrades().length.toString()"
           [sub]="'Bot: ' + bot.status() + (bot.cycleCount() > 0 ? ' - ' + bot.cycleCount() + ' cycles' : '')" />
-        <app-stat-card label="Paper Balance"
+        <app-stat-card
+          [label]="walletIsPaper() ? 'Paper Balance' : 'Binance Balance'"
           [value]="walletUSDT()"
-          [isPositive]="walletIsPaper()"
-          [sub]="walletIsPaper() ? 'Simulated - Updated ' + (walletUpdatedAt() | date:'HH:mm') : 'Live account'" />
+          [isPositive]="!walletIsPaper()"
+          [sub]="walletIsPaper() ? 'Simulated only' : 'Real - updated ' + (walletUpdatedAt() | date:'HH:mm')" />
       </div>
 
       <!-- Middle: Signal card + Bot activity + Wallet -->
@@ -207,6 +208,7 @@ import { FormsModule } from '@angular/forms';
               @if (walletUpdatedAt() > 0) {
                 <span class="panel-time">{{ walletUpdatedAt() | date:'HH:mm' }}</span>
               }
+              <button class="refresh-btn" (click)="showManualEntry.set(!showManualEntry())" title="Enter balance manually">Edit</button>
               <button class="refresh-btn" (click)="loadWallet(true)" [disabled]="walletLoading()">Refresh</button>
             </div>
           </div>
@@ -214,27 +216,43 @@ import { FormsModule } from '@angular/forms';
           @if (walletLoading()) {
             <div class="skeleton" style="height:18px;margin-bottom:8px;border-radius:4px"></div>
             <div class="skeleton" style="height:18px;width:70%;border-radius:4px"></div>
-          } @else if (walletError()) {
-            <div class="wallet-err">{{ walletError() }}</div>
           } @else {
-            <div class="wallet-list">
-              @for (b of walletBalances(); track b.asset) {
-                <div class="wl-row">
-                  <div class="wl-left">
-                    <span class="wl-coin-badge">{{ b.asset.slice(0,3) }}</span>
-                    <div class="wl-info">
-                      <span class="wl-name">{{ b.asset }}</span>
-                      @if (b.locked > 0) { <span class="wl-locked">{{ b.locked.toFixed(4) }} locked</span> }
+            @if (walletError()) {
+              <div class="wallet-err">{{ walletError() }}</div>
+            }
+            @if (walletBalances().length > 0) {
+              <div class="wallet-list">
+                @for (b of walletBalances(); track b.asset) {
+                  <div class="wl-row">
+                    <div class="wl-left">
+                      <span class="wl-coin-badge">{{ b.asset.slice(0,3) }}</span>
+                      <div class="wl-info">
+                        <span class="wl-name">{{ b.asset }}</span>
+                        @if (b.locked > 0) { <span class="wl-locked">{{ b.locked.toFixed(4) }} locked</span> }
+                      </div>
                     </div>
+                    <span class="wl-amount">{{ formatBalance(b) }}</span>
                   </div>
-                  <span class="wl-amount">{{ formatBalance(b) }}</span>
+                }
+              </div>
+              @if (totalUsd() > 0) {
+                <div class="wallet-total">
+                  <span>Total Value</span>
+                  <span class="wt-val">\${{ totalUsd().toLocaleString('en-US',{minimumFractionDigits:2}) }}</span>
                 </div>
               }
-            </div>
-            @if (totalUsd() > 0) {
-              <div class="wallet-total">
-                <span>Total Value</span>
-                <span class="wt-val">\${{ totalUsd().toLocaleString('en-US',{minimumFractionDigits:2}) }}</span>
+            }
+            <!-- Manual balance entry -->
+            @if (showManualEntry() || walletIsPaper()) {
+              <div class="manual-entry">
+                <div class="me-label">Enter your real Binance USDT balance:</div>
+                <div class="me-row">
+                  <input class="me-input" type="number" min="0" step="0.01"
+                    placeholder="e.g. 77.00"
+                    [ngModel]="manualBalanceInput()" (ngModelChange)="manualBalanceInput.set($event)" />
+                  <button class="me-save" (click)="saveManualBalance()">Save</button>
+                </div>
+                <div class="me-hint">Bot will use this for position sizing. Update after each trade.</div>
               </div>
             }
           }
@@ -666,6 +684,24 @@ import { FormsModule } from '@angular/forms';
     }
     .wt-val { font-size:16px; font-weight:800; color:var(--text-primary); }
 
+    /* Manual balance entry */
+    .manual-entry {
+      margin-top:12px; padding:12px; background:rgba(59,130,246,0.06);
+      border:1px dashed rgba(59,130,246,0.3); border-radius:8px;
+    }
+    .me-label { font-size:11px; color:var(--text-secondary); margin-bottom:6px; font-weight:600; }
+    .me-row { display:flex; gap:6px; }
+    .me-input {
+      flex:1; padding:7px 10px; border-radius:6px; border:1px solid var(--border);
+      background:var(--bg-primary); color:var(--text-primary); font-size:13px; outline:none;
+    }
+    .me-input:focus { border-color:var(--blue); }
+    .me-save {
+      padding:7px 14px; border-radius:6px; border:none;
+      background:var(--blue); color:white; font-size:12px; font-weight:700; cursor:pointer;
+    }
+    .me-hint { font-size:10px; color:var(--text-muted); margin-top:5px; }
+
     /* Positions */
     .pos-empty { text-align:center; padding:24px 0; color:var(--text-muted); }
     .pos-empty-icon { font-size:12px; font-weight:700; display:block; margin-bottom:8px; }
@@ -824,11 +860,16 @@ export class DashboardComponent implements OnInit {
   backtestError = signal<string | null>(null);
   backtestResult = signal<BacktestResult | null>(null);
 
-  readonly walletIsPaper = computed(() => !this.creds.isLive());
+  walletIsPaper = signal(true);
+  manualBalance = signal<number | null>(this.loadManualBalance());
+  manualBalanceInput = signal('');
+  showManualEntry = signal(false);
 
   readonly walletUSDT = computed(() => {
+    const manual = this.manualBalance();
     const usdt = this.walletBalances().find(b => b.asset === 'USDT' || b.asset === 'BUSD');
-    return usdt ? '$' + usdt.total.toLocaleString('en-US',{minimumFractionDigits:2}) : '$0.00';
+    const val = usdt ? usdt.total : (manual ?? 0);
+    return '$' + val.toLocaleString('en-US', {minimumFractionDigits:2});
   });
 
   readonly totalUsd = computed(() => {
@@ -905,35 +946,77 @@ export class DashboardComponent implements OnInit {
     void this.runBacktest();
   }
 
+  private loadManualBalance(): number | null {
+    try {
+      const v = localStorage.getItem('btrade_manual_balance');
+      return v ? parseFloat(v) : null;
+    } catch { return null; }
+  }
+
+  saveManualBalance(): void {
+    const v = parseFloat(this.manualBalanceInput());
+    if (!v || v <= 0) return;
+    this.manualBalance.set(v);
+    this.showManualEntry.set(false);
+    localStorage.setItem('btrade_manual_balance', String(v));
+    // Show as manual entry in wallet list
+    this.walletBalances.set([{ asset: 'USDT', free: v, locked: 0, total: v }]);
+    this.walletIsPaper.set(false);
+    this.walletUpdatedAt.set(Date.now());
+  }
+
   async loadWallet(force = false): Promise<void> {
     this.walletLoading.set(true);
     this.walletError.set(null);
     try {
-      if (!this.creds.isLive()) {
-        // Paper mode — show $10,000 simulated
-        this.walletBalances.set([{ asset: 'USDT', free: 10000, locked: 0, total: 10000 }]);
-        this.walletUpdatedAt.set(Date.now());
-        return;
-      }
-      // Live mode — read wallet.json written by GitHub Actions bot (Vercel/browser both blocked by Binance 451)
+      // Always try to read real balance from GitHub (written by bot every 5 min)
       const res = await fetch(
         'https://raw.githubusercontent.com/ishivamsoni150299/binance-trade/main/wallet.json?t=' + Date.now(),
         { signal: AbortSignal.timeout(10000) }
       );
-      if (!res.ok) throw new Error('Could not load wallet from GitHub');
+      if (!res.ok) throw new Error('wallet.json not found');
       const data = await res.json();
-      const balances: WalletBalance[] = (data.balances ?? [])
-        .map((b: any) => ({
-          asset: b.asset,
-          free: parseFloat(b.free ?? b.total ?? 0),
-          locked: parseFloat(b.locked ?? 0),
-          total: parseFloat(b.total ?? b.free ?? 0),
-        }))
-        .sort((a: WalletBalance, b: WalletBalance) => b.total - a.total);
-      this.walletBalances.set(balances);
+
+      // If bot is running live mode, wallet.json has isPaper=false with real balances
+      if (data.isPaper === false && Array.isArray(data.balances) && data.balances.length > 0) {
+        const balances: WalletBalance[] = data.balances
+          .map((b: any) => ({
+            asset: b.asset,
+            free: parseFloat(b.free ?? b.total ?? 0),
+            locked: parseFloat(b.locked ?? 0),
+            total: parseFloat(b.total ?? b.free ?? 0),
+          }))
+          .sort((a: WalletBalance, b: WalletBalance) => b.total - a.total);
+        this.walletBalances.set(balances);
+        this.walletIsPaper.set(false);
+        this.walletUpdatedAt.set(data.updatedAt ?? Date.now());
+        return;
+      }
+
+      // Bot is in paper mode — check if user has manually entered balance
+      const manual = this.manualBalance();
+      if (manual && manual > 0) {
+        this.walletBalances.set([{ asset: 'USDT', free: manual, locked: 0, total: manual }]);
+        this.walletIsPaper.set(false);
+        this.walletUpdatedAt.set(Date.now());
+        return;
+      }
+
+      // Paper mode fallback
+      this.walletBalances.set([{ asset: 'USDT', free: 10000, locked: 0, total: 10000 }]);
+      this.walletIsPaper.set(true);
       this.walletUpdatedAt.set(data.updatedAt ?? Date.now());
-    } catch (e: any) {
-      this.walletError.set(this.creds.hasKeys() ? `Could not load balance: ${e.message}` : 'Add API keys in Settings to see live balance.');
+
+    } catch {
+      // GitHub fetch failed — use manual balance if set
+      const manual = this.manualBalance();
+      if (manual && manual > 0) {
+        this.walletBalances.set([{ asset: 'USDT', free: manual, locked: 0, total: manual }]);
+        this.walletIsPaper.set(false);
+      } else {
+        this.walletError.set('Enter your Binance balance below to see it here.');
+        this.showManualEntry.set(true);
+      }
     } finally {
       this.walletLoading.set(false);
     }

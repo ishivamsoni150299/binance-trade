@@ -25,10 +25,16 @@ const BASE = TESTNET
   ? 'https://testnet.binance.vision/api'
   : 'https://api.binance.com/api';
 
-// Testnet first when TESTNET=true, otherwise try all public hosts
+// Public kline hosts — data.binance.vision is a CDN that bypasses geo-blocks
 const PUBLIC_HOSTS = TESTNET
-  ? ['https://testnet.binance.vision', 'https://api.binance.com', 'https://api1.binance.com']
-  : ['https://api.binance.com', 'https://api1.binance.com', 'https://api2.binance.com', 'https://api3.binance.com'];
+  ? ['https://testnet.binance.vision']
+  : [
+      'https://data-api.binance.vision',   // CDN endpoint, not geo-restricted
+      'https://api.binance.com',
+      'https://api1.binance.com',
+      'https://api2.binance.com',
+      'https://api3.binance.com',
+    ];
 
 // Binance helpers
 function sign(qs: string): string {
@@ -66,19 +72,27 @@ async function binanceRequest(method: string, endpoint: string, params: Record<s
 async function getKlines(symbol: string, interval: string, limit = 200): Promise<number[][]> {
   for (const host of PUBLIC_HOSTS) {
     try {
-      const url = `${host}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+      // data-api.binance.vision uses /api/v3/, others use /api/v3/
+      const path = host.includes('data-api') ? '/api/v3/klines' : '/api/v3/klines';
+      const url = `${host}${path}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
       const res = await fetch(url, {
-        headers: { 'User-Agent': 'BTrader/1.0' },
+        headers: { 'User-Agent': 'Mozilla/5.0 BTrader/1.0' },
         signal: AbortSignal.timeout(12000),
       });
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-      console.warn(`[${host}] non-array response:`, JSON.stringify(data).slice(0, 200));
+      const text = await res.text();
+      let data: any;
+      try { data = JSON.parse(text); } catch { continue; }
+      if (Array.isArray(data) && data.length > 0) return data;
+      if (data?.code === 0 || (data?.msg && data.msg.includes('restricted'))) {
+        console.warn(`[${host}] geo-blocked (451):`, data.msg?.slice(0, 80) ?? 'blocked');
+        continue; // try next host
+      }
+      console.warn(`[${host}] unexpected response:`, text.slice(0, 100));
     } catch (e: any) {
       console.warn(`[${host}] fetch error: ${e?.message ?? e}`);
     }
   }
-  throw new Error('All Binance hosts failed');
+  throw new Error('All Binance hosts failed — geo-restriction on this runner region');
 }
 
 async function getBalance(asset = 'USDT'): Promise<number> {
@@ -196,34 +210,64 @@ function strategySignal(closes: number[]) {
 const WALLET_FILE = path.join(process.cwd(), 'wallet.json');
 
 async function saveWallet(): Promise<void> {
-  // Paper/testnet mode: write a simulated $10,000 USDT paper balance
   if (PAPER || !API_KEY) {
+    // Paper mode — do NOT overwrite wallet.json if it already has real data
+    const existing = loadExistingWallet();
+    if (existing && existing.isPaper === false) {
+      console.log('Paper mode: keeping existing live wallet.json untouched');
+      return;
+    }
     const paperBalance = [{ asset: 'USDT', free: 10000, locked: 0, total: 10000 }];
-    fs.writeFileSync(WALLET_FILE, JSON.stringify({
-      balances: paperBalance,
-      isPaper: true,
-      updatedAt: Date.now(),
-    }, null, 2));
+    fs.writeFileSync(WALLET_FILE, JSON.stringify({ balances: paperBalance, isPaper: true, updatedAt: Date.now() }, null, 2));
     console.log('Paper wallet saved: $10,000 USDT (simulated)');
     return;
   }
   // Live mode: fetch real balances from Binance
-  try {
-    const acc = await binanceRequest('GET', '/v3/account', {}, true);
-    const balances = (acc.balances ?? [])
-      .filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
-      .map((b: any) => ({
-        asset: b.asset,
-        free: parseFloat(b.free),
-        locked: parseFloat(b.locked),
-        total: parseFloat(b.free) + parseFloat(b.locked),
-      }))
-      .sort((a: any, b: any) => b.total - a.total);
-    fs.writeFileSync(WALLET_FILE, JSON.stringify({ balances, isPaper: false, updatedAt: Date.now() }, null, 2));
-    console.log(`Wallet saved: ${balances.length} real asset(s)`);
-  } catch (e: any) {
-    console.warn('Could not fetch wallet:', e.message);
+  // Try multiple base URLs in case one is geo-blocked
+  const SIGNED_HOSTS = [
+    'https://api.binance.com',
+    'https://api1.binance.com',
+    'https://api2.binance.com',
+    'https://api3.binance.com',
+  ];
+  for (const host of SIGNED_HOSTS) {
+    try {
+      const params: Record<string, string> = { timestamp: String(Date.now()) };
+      const qs = new URLSearchParams(params).toString();
+      const sig = crypto.createHmac('sha256', API_SECRET).update(qs).digest('hex');
+      const url = `${host}/api/v3/account?${qs}&signature=${sig}`;
+      const res = await fetch(url, {
+        headers: { 'X-MBX-APIKEY': API_KEY, 'User-Agent': 'Mozilla/5.0 BTrader/1.0' },
+        signal: AbortSignal.timeout(10000),
+      });
+      const text = await res.text();
+      const acc = JSON.parse(text);
+      if (acc.code === 0 || (acc.msg && acc.msg.includes('restricted'))) {
+        console.warn(`[${host}] account API geo-blocked`);
+        continue;
+      }
+      if (!res.ok) { console.warn(`[${host}] account API error:`, acc.msg); continue; }
+      const balances = (acc.balances ?? [])
+        .filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
+        .map((b: any) => ({
+          asset: b.asset,
+          free: parseFloat(b.free),
+          locked: parseFloat(b.locked),
+          total: parseFloat(b.free) + parseFloat(b.locked),
+        }))
+        .sort((a: any, b: any) => b.total - a.total);
+      fs.writeFileSync(WALLET_FILE, JSON.stringify({ balances, isPaper: false, updatedAt: Date.now() }, null, 2));
+      console.log(`Live wallet saved: ${balances.length} asset(s) from ${host}`);
+      return;
+    } catch (e: any) {
+      console.warn(`[${host}] account fetch error: ${e.message}`);
+    }
   }
+  console.warn('Could not fetch live wallet from any host — keeping existing wallet.json');
+}
+
+function loadExistingWallet(): any {
+  try { return JSON.parse(fs.readFileSync(WALLET_FILE, 'utf8')); } catch { return null; }
 }
 
 // Trade log (appended to trades.json in repo)
