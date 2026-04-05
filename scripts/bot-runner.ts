@@ -290,8 +290,12 @@ async function main() {
 
   const riskAmount = balance * (positionSizePct / 100);
   const quantity   = riskAmount / currentPrice;
-  const stopPrice  = currentPrice * (1 - stopLossPct / 100);
-  const tpPrice    = currentPrice * (1 + takeProfitPct / 100);
+  const stopPrice  = signal.action === 'BUY'
+    ? currentPrice * (1 - stopLossPct / 100)
+    : currentPrice * (1 + stopLossPct / 100);
+  const tpPrice    = signal.action === 'BUY'
+    ? currentPrice * (1 + takeProfitPct / 100)
+    : currentPrice * (1 - takeProfitPct / 100);
 
   const trade: any = {
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,

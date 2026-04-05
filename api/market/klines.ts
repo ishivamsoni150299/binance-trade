@@ -9,12 +9,21 @@ const BINANCE_HOSTS = [
   'https://api3.binance.com',
 ];
 
-async function fetchKlines(symbol: string, interval: string, limit: string): Promise<any[]> {
+async function fetchKlines(
+  symbol: string,
+  interval: string,
+  limit: string,
+  startTime?: string,
+  endTime?: string,
+): Promise<any[]> {
   let lastError: Error | null = null;
 
   for (const host of BINANCE_HOSTS) {
     try {
-      const url = `${host}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+      const qs = new URLSearchParams(
+        Object.fromEntries(Object.entries({ symbol, interval, limit, startTime, endTime }).filter(([, v]) => v !== undefined))
+      ).toString();
+      const url = `${host}/api/v3/klines?${qs}`;
       const response = await fetch(url, {
         headers: {
           'Accept': 'application/json',
@@ -59,10 +68,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     symbol = 'BTCUSDT',
     interval = '1h',
     limit = '200',
+    startTime,
+    endTime,
   } = req.query as Record<string, string>;
 
   try {
-    const raw = await fetchKlines(symbol, interval, limit);
+    const raw = await fetchKlines(symbol, interval, limit, startTime, endTime);
 
     const candles = raw.map((k: any[]) => ({
       time: Math.floor(Number(k[0]) / 1000),

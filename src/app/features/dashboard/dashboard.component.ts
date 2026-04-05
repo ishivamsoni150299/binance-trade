@@ -5,7 +5,7 @@ import { BinanceWsService } from '../../core/services/binance-ws.service';
 import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
 import { TradeStoreService } from '../../core/services/trade-store.service';
 import { ConfigService } from '../../core/services/config.service';
-import { ApiService, WalletBalance } from '../../core/services/api.service';
+import { ApiService, WalletBalance, BacktestResult } from '../../core/services/api.service';
 import { StatCardComponent } from '../../shared/components/stat-card.component';
 
 @Component({
@@ -259,6 +259,63 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
 
       </div>
 
+      <!-- Backtest panel -->
+      <div class="panel backtest-panel">
+        <div class="panel-header">
+          <span class="panel-title">Backtest (Last {{ backtestDays() }} Days)</span>
+          <div class="bt-controls">
+            <button class="bt-btn" [class.active]="backtestDays() === 30" (click)="setBacktestDays(30)">30d</button>
+            <button class="bt-btn" [class.active]="backtestDays() === 90" (click)="setBacktestDays(90)">90d</button>
+            <button class="bt-run" (click)="runBacktest()" [disabled]="backtestLoading()">
+              {{ backtestLoading() ? 'Running...' : 'Run' }}
+            </button>
+          </div>
+        </div>
+
+        @if (backtestLoading()) {
+          <div class="skeleton" style="height:18px;margin-bottom:8px;border-radius:4px"></div>
+          <div class="skeleton" style="height:18px;width:70%;border-radius:4px"></div>
+        } @else if (backtestError()) {
+          <div class="wallet-err">{{ backtestError() }}</div>
+        } @else if (backtestResult()) {
+          <div class="bt-grid">
+            <div class="bt-item">
+              <span class="bt-label">Trades</span>
+              <span class="bt-val">{{ backtestResult()?.trades }}</span>
+            </div>
+            <div class="bt-item">
+              <span class="bt-label">Win Rate</span>
+              <span class="bt-val" [class.up]="(backtestResult()?.winRate ?? 0) >= 50" [class.dn]="(backtestResult()?.winRate ?? 0) < 50">
+                {{ (backtestResult()?.winRate ?? 0).toFixed(1) }}%
+              </span>
+            </div>
+            <div class="bt-item">
+              <span class="bt-label">Total P&L</span>
+              <span class="bt-val" [class.up]="(backtestResult()?.totalPnl ?? 0) >= 0" [class.dn]="(backtestResult()?.totalPnl ?? 0) < 0">
+                {{ (backtestResult()?.totalPnl ?? 0) >= 0 ? '+' : '' }}\${{ (backtestResult()?.totalPnl ?? 0).toFixed(2) }}
+              </span>
+            </div>
+            <div class="bt-item">
+              <span class="bt-label">Return</span>
+              <span class="bt-val" [class.up]="(backtestResult()?.totalPnlPct ?? 0) >= 0" [class.dn]="(backtestResult()?.totalPnlPct ?? 0) < 0">
+                {{ (backtestResult()?.totalPnlPct ?? 0) >= 0 ? '+' : '' }}{{ (backtestResult()?.totalPnlPct ?? 0).toFixed(2) }}%
+              </span>
+            </div>
+            <div class="bt-item">
+              <span class="bt-label">Max Drawdown</span>
+              <span class="bt-val dn">-\${{ (backtestResult()?.maxDrawdown ?? 0).toFixed(2) }}</span>
+            </div>
+            <div class="bt-item">
+              <span class="bt-label">Candles</span>
+              <span class="bt-val">{{ backtestResult()?.candles }}</span>
+            </div>
+          </div>
+          @if (backtestResult()?.note) {
+            <div class="bt-note">{{ backtestResult()?.note }}</div>
+          }
+        }
+      </div>
+
       <!-- Bottom quick actions -->
       <div class="bottom-bar">
         <a routerLink="/chart" class="bb-btn">Live Chart</a>
@@ -358,6 +415,25 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
     }
     .refresh-btn:hover { color:var(--text-primary); }
     .refresh-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+    /* Backtest */
+    .backtest-panel { margin-bottom: 16px; }
+    .bt-controls { display:flex; align-items:center; gap:6px; }
+    .bt-btn {
+      padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; font-size: 11px; font-weight: 700;
+    }
+    .bt-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+    .bt-run {
+      padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg-card); color: var(--text-secondary); cursor: pointer; font-size: 11px; font-weight: 700;
+    }
+    .bt-run:disabled { opacity: 0.5; cursor: not-allowed; }
+    .bt-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+    .bt-item { background: var(--bg-hover); border-radius: 8px; padding: 10px 12px; }
+    .bt-label { display:block; font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; font-weight: 600; }
+    .bt-val { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+    .bt-note { margin-top: 10px; font-size: 11px; color: var(--text-muted); }
 
     /* Signal */
     .sig-body { }
@@ -477,10 +553,12 @@ import { StatCardComponent } from '../../shared/components/stat-card.component';
     @media (max-width:1100px) {
       .kpi-row { grid-template-columns:repeat(3,1fr); }
       .mid-grid { grid-template-columns:1fr; }
+      .bt-grid { grid-template-columns: repeat(3, 1fr); }
     }
     @media (max-width:700px) {
       .kpi-row { grid-template-columns:repeat(2,1fr); }
       .hero-stats { display:none; }
+      .bt-grid { grid-template-columns: repeat(2, 1fr); }
     }
   `]
 })
@@ -491,6 +569,11 @@ export class DashboardComponent implements OnInit {
   walletUpdatedAt = signal<number>(0);
   today = new Date();
   readonly Math = Math;
+
+  backtestDays = signal<30 | 90>(30);
+  backtestLoading = signal(false);
+  backtestError = signal<string | null>(null);
+  backtestResult = signal<BacktestResult | null>(null);
 
   readonly walletIsPaper = computed(() => this.config.config().riskParams.paperTrading);
 
@@ -519,6 +602,7 @@ export class DashboardComponent implements OnInit {
   async ngOnInit(): Promise<void> {
     await this.tradeStore.init();
     await this.loadWallet();
+    void this.runBacktest();
   }
 
   async loadWallet(): Promise<void> {
@@ -561,5 +645,31 @@ export class DashboardComponent implements OnInit {
 
   getIndicatorEntries(obj: Record<string, number>) {
     return Object.entries(obj).map(([key, value]) => ({ key, value }));
+  }
+
+  setBacktestDays(days: 30 | 90): void {
+    this.backtestDays.set(days);
+  }
+
+  async runBacktest(): Promise<void> {
+    this.backtestLoading.set(true);
+    this.backtestError.set(null);
+    try {
+      const cfg = this.config.config();
+      const result = await this.api.runBacktest({
+        symbol: cfg.pair,
+        interval: cfg.timeframe,
+        days: this.backtestDays(),
+        strategy: cfg.strategy,
+        strategyParams: cfg.strategyParams as any,
+        riskParams: cfg.riskParams as any,
+      });
+      if (result.error) this.backtestError.set(result.error);
+      else this.backtestResult.set(result);
+    } catch {
+      this.backtestError.set('Backtest failed. Try again.');
+    } finally {
+      this.backtestLoading.set(false);
+    }
   }
 }

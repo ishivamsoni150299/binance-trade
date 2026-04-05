@@ -82,6 +82,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    const stopLossPrice = signal.action === 'BUY'
+      ? currentPrice * (1 - (riskParams.stopLossPct ?? 2) / 100)
+      : currentPrice * (1 + (riskParams.stopLossPct ?? 2) / 100);
+    const takeProfitPrice = signal.action === 'BUY'
+      ? currentPrice * (1 + (riskParams.takeProfitPct ?? 4) / 100)
+      : currentPrice * (1 - (riskParams.takeProfitPct ?? 4) / 100);
+
     // 5. Execute trade
     let trade: any = null;
     const tradeId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -100,8 +107,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         isPaper: true,
         signalScore: signal.score,
         indicators: signal.indicators,
-        stopLossPrice: risk.stopLossPrice,
-        takeProfitPrice: risk.takeProfitPrice,
+        stopLossPrice,
+        takeProfitPrice,
       };
     } else {
       const order = await placeOrder(pair, signal.action, risk.positionSize!);
@@ -119,8 +126,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         signalScore: signal.score,
         indicators: signal.indicators,
         binanceOrderId: order.orderId,
-        stopLossPrice: risk.stopLossPrice,
-        takeProfitPrice: risk.takeProfitPrice,
+        stopLossPrice,
+        takeProfitPrice,
       };
     }
 

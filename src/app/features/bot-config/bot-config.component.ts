@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { TitleCasePipe } from '@angular/common';
 import { ConfigService } from '../../core/services/config.service';
 import { BotSchedulerService } from '../../core/services/bot-scheduler.service';
-import { StrategyType, Timeframe } from '../../core/models/types';
+import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS } from '../../core/models/types';
 
 @Component({
   selector: 'app-bot-config',
@@ -171,6 +171,16 @@ import { StrategyType, Timeframe } from '../../core/models/types';
           <div class="card">
             <div class="card-title">Risk Management</div>
 
+            <div class="safe-row">
+              <div class="safe-left">
+                <div class="safe-title">Safe Mode</div>
+                <div class="safe-sub">Conservative sizing and limits</div>
+              </div>
+              <button class="safe-toggle" [class.active]="isSafeMode()" (click)="toggleSafeMode()">
+                {{ isSafeMode() ? 'On' : 'Off' }}
+              </button>
+            </div>
+
             <div class="slider-row">
               <div class="slider-label">
                 <span>Position Size</span>
@@ -274,6 +284,18 @@ import { StrategyType, Timeframe } from '../../core/models/types';
       font-size: 11px; font-weight: 700; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 14px;
     }
+    .safe-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--bg-hover); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 12px; margin-bottom: 14px;
+    }
+    .safe-title { font-size: 12px; font-weight: 700; color: var(--text-primary); }
+    .safe-sub { font-size: 11px; color: var(--text-muted); }
+    .safe-toggle {
+      min-width: 58px; padding: 6px 10px; border-radius: 16px; border: 1px solid var(--border);
+      background: var(--bg-card); color: var(--text-secondary); font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .safe-toggle.active { background: rgba(38,166,154,0.12); color: var(--green); border-color: rgba(38,166,154,0.4); }
     .form-row { margin-bottom: 14px; }
     .form-row:last-child { margin-bottom: 0; }
     .form-row label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 500; }
@@ -372,6 +394,16 @@ export class BotConfigComponent {
     COMPOSITE: 'Weighted score of all 4 indicators',
   };
 
+  private previousRisk: RiskParams | null = null;
+  private readonly safeRisk: RiskParams = {
+    positionSizePct: 2,
+    stopLossPct: 1,
+    takeProfitPct: 2,
+    maxDailyLossPct: 2,
+    maxOpenPositions: 1,
+    paperTrading: true,
+  };
+
   readonly rrRatio = computed(() =>
     this.config.config().riskParams.takeProfitPct / this.config.config().riskParams.stopLossPct
   );
@@ -379,6 +411,15 @@ export class BotConfigComponent {
   readonly breakEvenWinRate = computed(() =>
     (1 / (1 + this.rrRatio())) * 100
   );
+
+  readonly isSafeMode = computed(() => {
+    const r = this.config.config().riskParams;
+    return r.positionSizePct === this.safeRisk.positionSizePct &&
+      r.stopLossPct === this.safeRisk.stopLossPct &&
+      r.takeProfitPct === this.safeRisk.takeProfitPct &&
+      r.maxDailyLossPct === this.safeRisk.maxDailyLossPct &&
+      r.maxOpenPositions === this.safeRisk.maxOpenPositions;
+  });
 
   constructor(
     readonly config: ConfigService,
@@ -400,5 +441,16 @@ export class BotConfigComponent {
 
   resetConfig(): void {
     if (confirm('Reset all settings to defaults?')) this.config.reset();
+  }
+
+  toggleSafeMode(): void {
+    if (this.isSafeMode()) {
+      if (this.previousRisk) this.config.updateRisk(this.previousRisk);
+      else this.config.updateRisk(DEFAULT_RISK_PARAMS);
+      this.previousRisk = null;
+      return;
+    }
+    this.previousRisk = { ...this.config.config().riskParams };
+    this.config.updateRisk(this.safeRisk);
   }
 }

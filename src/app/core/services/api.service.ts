@@ -16,6 +16,32 @@ export interface WalletResponse {
   updatedAt?: number;
 }
 
+export interface BacktestRequest {
+  symbol: string;
+  interval: string;
+  days: number;
+  strategy: string;
+  strategyParams: Record<string, number>;
+  riskParams: Record<string, number>;
+}
+
+export interface BacktestResult {
+  symbol: string;
+  interval: string;
+  days: number;
+  trades: number;
+  wins: number;
+  winRate: number;
+  totalPnl: number;
+  totalPnlPct: number;
+  maxDrawdown: number;
+  maxDrawdownPct: number;
+  finalBalance: number;
+  candles: number;
+  error?: string;
+  note?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   constructor(private http: HttpClient) {}
@@ -42,5 +68,9 @@ export class ApiService {
 
   async getWalletBalances(): Promise<WalletResponse> {
     return firstValueFrom(this.http.get<WalletResponse>('/api/wallet/balances'));
+  }
+
+  async runBacktest(payload: BacktestRequest): Promise<BacktestResult> {
+    return firstValueFrom(this.http.post<BacktestResult>('/api/market/backtest', payload));
   }
 }

@@ -50,16 +50,25 @@ const PUBLIC_HOSTS = [
   'https://api3.binance.com',
 ];
 
-export async function getKlines(symbol: string, interval: string, limit = 200): Promise<number[][]> {
+export async function getKlines(
+  symbol: string,
+  interval: string,
+  limit = 200,
+  startTime?: number,
+  endTime?: number,
+): Promise<number[][]> {
   // Use testnet if configured
   if (process.env['BINANCE_TESTNET'] === 'true') {
-    return request('GET', '/v3/klines', { symbol, interval, limit });
+    return request('GET', '/v3/klines', { symbol, interval, limit, startTime, endTime });
   }
 
   let lastError: Error | null = null;
   for (const host of PUBLIC_HOSTS) {
     try {
-      const url = `${host}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+      const qs = new URLSearchParams(
+        Object.fromEntries(Object.entries({ symbol, interval, limit, startTime, endTime }).filter(([, v]) => v !== undefined))
+      ).toString();
+      const url = `${host}/api/v3/klines?${qs}`;
       const res = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BTrader/1.0)' },
         signal: AbortSignal.timeout(8000),
@@ -72,6 +81,44 @@ export async function getKlines(symbol: string, interval: string, limit = 200): 
     }
   }
   throw lastError ?? new Error('All Binance hosts failed for klines');
+}
+
+function intervalToMs(interval: string): number {
+  switch (interval) {
+    case '1m': return 60_000;
+    case '5m': return 300_000;
+    case '15m': return 900_000;
+    case '30m': return 1_800_000;
+    case '1h': return 3_600_000;
+    case '4h': return 14_400_000;
+    case '1d': return 86_400_000;
+    default: return 3_600_000;
+  }
+}
+
+export async function getKlinesRange(
+  symbol: string,
+  interval: string,
+  startTime: number,
+  endTime: number,
+  limit = 1000,
+): Promise<number[][]> {
+  const out: number[][] = [];
+  let cursor = startTime;
+  const step = intervalToMs(interval);
+
+  while (cursor < endTime) {
+    const batch = await getKlines(symbol, interval, limit, cursor, endTime);
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    out.push(...batch);
+    const lastOpen = Number(batch[batch.length - 1][0]);
+    const next = lastOpen + step;
+    if (!Number.isFinite(next) || next <= cursor) break;
+    cursor = next;
+    if (batch.length < limit) break;
+  }
+
+  return out;
 }
 
 export async function getAccountInfo(): Promise<any> {

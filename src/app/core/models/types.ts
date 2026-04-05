@@ -63,6 +63,8 @@ export interface Trade {
   strategy: StrategyType;
   entryPrice: number;
   exitPrice?: number;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
   quantity: number;
   pnl?: number;
   pnlPct?: number;

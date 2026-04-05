@@ -4,6 +4,8 @@ import { SidebarComponent } from './shared/components/sidebar.component';
 import { BinanceWsService } from './core/services/binance-ws.service';
 import { ConfigService } from './core/services/config.service';
 import { ApiService } from './core/services/api.service';
+import { TradeStoreService } from './core/services/trade-store.service';
+import { PositionMonitorService } from './core/services/position-monitor.service';
 
 interface TickerItem { symbol: string; price: string; changePct: number; }
 
@@ -89,9 +91,12 @@ export class AppComponent implements OnInit, OnDestroy {
     private ws: BinanceWsService,
     private config: ConfigService,
     private api: ApiService,
+    private tradeStore: TradeStoreService,
+    private _positionMonitor: PositionMonitorService,
   ) {}
 
   ngOnInit(): void {
+    void this.tradeStore.init();
     this.ws.connect(this.config.pair(), this.config.timeframe());
     this.loadMarketTickers();
     this.marketTimer = setInterval(() => this.loadMarketTickers(), 30000);
