@@ -175,34 +175,38 @@ function emaScore(closes: number[], fast = 9, slow = 21): number {
 
 function computeSignal(strategy: string, closes: number[], params: any) {
   const p = params ?? {};
-  const rsi = rsiScore(closes, p.rsiPeriod ?? 14, p.rsiOversold ?? 30, p.rsiOverbought ?? 70);
-  const macd = macdScore(closes, p.macdFast ?? 12, p.macdSlow ?? 26, p.macdSignal ?? 9);
-  const bollinger = bollingerScore(closes, p.bbPeriod ?? 20, p.bbMultiplier ?? 2);
-  const ema = emaScore(closes, p.emaFast ?? 9, p.emaSlow ?? 21);
-  const indicators = { rsi, macd, bollinger, ema };
+  const base = computeScore(strategy, closes, p);
+  const indicators = base.indicators;
   const buyTh = p.buyThreshold ?? 0.5;
   const sellTh = p.sellThreshold ?? -0.5;
   const volatilityPct = calcVolatilityPct(closes, p.volatilityLookback ?? 20);
   const trendPct = calcTrendPct(closes, p.trendEmaFast ?? 20, p.trendEmaSlow ?? 50);
+  const confirmBars = Math.max(1, Math.min(5, p.confirmBars ?? 1));
 
-  let score: number;
-  if (strategy === 'RSI') score = rsi;
-  else if (strategy === 'MACD') score = macd;
-  else if (strategy === 'BOLLINGER') score = bollinger;
-  else if (strategy === 'EMA') score = ema;
-  else {
-    score =
-      rsi * (p.rsiWeight ?? 0.25) +
-      macd * (p.macdWeight ?? 0.30) +
-      bollinger * (p.bbWeight ?? 0.25) +
-      ema * (p.emaWeight ?? 0.20);
+  if (confirmBars <= 1) {
+    const action: 'BUY' | 'SELL' | 'HOLD' = base.score >= buyTh ? 'BUY' : base.score <= sellTh ? 'SELL' : 'HOLD';
+    const filtered = applyFilters(action, volatilityPct, trendPct, p);
+    return { action: filtered.action, score: base.score, indicators, volatilityPct, trendPct, filterReason: filtered.reason };
   }
 
-  const action: 'BUY' | 'SELL' | 'HOLD' =
-    score >= buyTh ? 'BUY' : score <= sellTh ? 'SELL' : 'HOLD';
+  const scores: number[] = [];
+  for (let i = confirmBars - 1; i >= 0; i--) {
+    const slice = closes.slice(0, closes.length - i);
+    if (slice.length < 30) continue;
+    scores.push(computeScore(strategy, slice, p).score);
+  }
+  const avgScore = scores.length ? (scores.reduce((s, v) => s + v, 0) / scores.length) : base.score;
+  const buyHits = scores.filter(s => s >= buyTh).length;
+  const sellHits = scores.filter(s => s <= sellTh).length;
+  const minHits = Math.ceil(confirmBars * 0.6);
+
+  let action: 'BUY' | 'SELL' | 'HOLD' = 'HOLD';
+  if (buyHits >= minHits) action = 'BUY';
+  else if (sellHits >= minHits) action = 'SELL';
+  else action = avgScore >= buyTh ? 'BUY' : avgScore <= sellTh ? 'SELL' : 'HOLD';
 
   const filtered = applyFilters(action, volatilityPct, trendPct, p);
-  return { action: filtered.action, score, indicators, volatilityPct, trendPct, filterReason: filtered.reason };
+  return { action: filtered.action, score: avgScore, indicators, volatilityPct, trendPct, filterReason: filtered.reason };
 }
 
 function applyFilters(
@@ -247,6 +251,28 @@ function computePositionSizePct(risk: any, signalScore: number, volatilityPct: n
   let sizePct = base * strength * volFactor;
   sizePct = Math.max(minPct, Math.min(maxPct, sizePct));
   return sizePct;
+}
+
+function computeScore(strategy: string, closes: number[], p: any) {
+  const rsi = rsiScore(closes, p.rsiPeriod ?? 14, p.rsiOversold ?? 30, p.rsiOverbought ?? 70);
+  const macd = macdScore(closes, p.macdFast ?? 12, p.macdSlow ?? 26, p.macdSignal ?? 9);
+  const bollinger = bollingerScore(closes, p.bbPeriod ?? 20, p.bbMultiplier ?? 2);
+  const ema = emaScore(closes, p.emaFast ?? 9, p.emaSlow ?? 21);
+  const indicators = { rsi, macd, bollinger, ema };
+
+  let score: number;
+  if (strategy === 'RSI') score = rsi;
+  else if (strategy === 'MACD') score = macd;
+  else if (strategy === 'BOLLINGER') score = bollinger;
+  else if (strategy === 'EMA') score = ema;
+  else {
+    score =
+      rsi * (p.rsiWeight ?? 0.25) +
+      macd * (p.macdWeight ?? 0.30) +
+      bollinger * (p.bbWeight ?? 0.25) +
+      ema * (p.emaWeight ?? 0.20);
+  }
+  return { score, indicators };
 }
 
 function inNoTradeWindow(startHour: number, endHour: number): boolean {

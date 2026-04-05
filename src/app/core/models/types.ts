@@ -37,6 +37,7 @@ export interface StrategyParams {
   volatilityLookback: number;
   minVolatilityPct: number;
   maxVolatilityPct: number;
+  confirmBars: number;
   // Composite weights (sum to 1)
   rsiWeight: number;
   macdWeight: number;
@@ -141,6 +142,7 @@ export const DEFAULT_STRATEGY_PARAMS: StrategyParams = {
   volatilityLookback: 20,
   minVolatilityPct: 0.4,
   maxVolatilityPct: 8,
+  confirmBars: 2,
   rsiWeight: 0.25,
   macdWeight: 0.30,
   bbWeight: 0.25,

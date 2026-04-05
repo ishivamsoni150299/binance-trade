@@ -37,6 +37,16 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
         <!-- LEFT: Market + Strategy selector -->
         <div class="config-col">
 
+          <!-- Auto presets -->
+          <div class="card">
+            <div class="card-title">Auto Mode</div>
+            <div class="preset-row">
+              <button class="preset-btn" (click)="applyPreset('conservative')">Conservative Auto</button>
+              <button class="preset-btn secondary" (click)="applyPreset('balanced')">Balanced Auto</button>
+            </div>
+            <div class="trust-hint">Applies recommended settings and enables scanning.</div>
+          </div>
+
           <!-- Market -->
           <div class="card">
             <div class="card-title">Market</div>
@@ -314,6 +324,16 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
                 (ngModelChange)="config.updateStrategy({maxVolatilityPct: +$event})">
               <div class="slider-bounds"><span>3%</span><span>15%</span></div>
             </div>
+            <div class="slider-row">
+              <div class="slider-label">
+                <span>Signal Confirm Bars</span>
+                <span class="slider-val">{{ cfg().strategyParams.confirmBars }}</span>
+              </div>
+              <input type="range" min="1" max="5" step="1" class="slider"
+                [ngModel]="cfg().strategyParams.confirmBars"
+                (ngModelChange)="config.updateStrategy({confirmBars: +$event})">
+              <div class="slider-bounds"><span>1</span><span>5</span></div>
+            </div>
           </div>
 
           <!-- Risk management -->
@@ -509,6 +529,12 @@ import { StrategyType, Timeframe, RiskParams, DEFAULT_RISK_PARAMS, TRUSTED_PAIRS
       font-size: 11px; font-weight: 700; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 14px;
     }
+    .preset-row { display: flex; gap: 8px; }
+    .preset-btn {
+      flex: 1; padding: 10px 12px; border-radius: 8px; border: none; cursor: pointer;
+      background: var(--blue); color: white; font-weight: 700; font-size: 12px;
+    }
+    .preset-btn.secondary { background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border); }
     .section-title {
       margin: 14px 0 10px;
       font-size: 11px; font-weight: 700; color: var(--text-muted);
@@ -721,6 +747,79 @@ export class BotConfigComponent {
   toggleScan(): void {
     const next = !this.config.config().scanEnabled;
     this.config.update({ scanEnabled: next });
+  }
+
+  applyPreset(mode: 'conservative' | 'balanced'): void {
+    if (mode === 'conservative') {
+      this.config.update({
+        scanEnabled: true,
+        scanTopN: 3,
+        scanMinQuoteVolume: 30_000_000,
+        scanRotationSec: 120,
+        trustedOnly: true,
+      });
+      this.config.updateStrategy({
+        useTrendFilter: true,
+        useVolatilityFilter: true,
+        trendEmaFast: 20,
+        trendEmaSlow: 50,
+        trendThresholdPct: 0.2,
+        volatilityLookback: 20,
+        minVolatilityPct: 0.5,
+        maxVolatilityPct: 5,
+        confirmBars: 2,
+        buyThreshold: 0.55,
+        sellThreshold: -0.55,
+      });
+      this.config.updateRisk({
+        positionSizePct: 3,
+        minPositionSizePct: 1,
+        maxPositionSizePct: 5,
+        stopLossPct: 1.5,
+        takeProfitPct: 3,
+        maxDailyLossPct: 3,
+        maxDrawdownPct: 8,
+        cooldownSec: 120,
+        dynamicPositionSizing: true,
+        volatilityTargetPct: 2,
+        paperTrading: true,
+      });
+      return;
+    }
+
+    this.config.update({
+      scanEnabled: true,
+      scanTopN: 4,
+      scanMinQuoteVolume: 20_000_000,
+      scanRotationSec: 120,
+      trustedOnly: true,
+    });
+    this.config.updateStrategy({
+      useTrendFilter: true,
+      useVolatilityFilter: true,
+      trendEmaFast: 20,
+      trendEmaSlow: 50,
+      trendThresholdPct: 0.1,
+      volatilityLookback: 20,
+      minVolatilityPct: 0.4,
+      maxVolatilityPct: 8,
+      confirmBars: 2,
+      buyThreshold: 0.5,
+      sellThreshold: -0.5,
+    });
+    this.config.updateRisk({
+      positionSizePct: 5,
+      minPositionSizePct: 1,
+      maxPositionSizePct: 8,
+      stopLossPct: 2,
+      takeProfitPct: 4,
+      maxDailyLossPct: 5,
+      maxDrawdownPct: 12,
+      cooldownSec: 90,
+      dynamicPositionSizing: true,
+      volatilityTargetPct: 2,
+      paperTrading: true,
+    });
   }
 
   toggleTrendFilter(): void {

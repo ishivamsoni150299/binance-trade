@@ -25,6 +25,7 @@ export interface StrategyParams {
   volatilityLookback?: number;
   minVolatilityPct?: number;
   maxVolatilityPct?: number;
+  confirmBars?: number;
   rsiWeight?: number;
   macdWeight?: number;
   bbWeight?: number;
@@ -83,31 +84,38 @@ export function getStrategySignal(
   closes: number[],
   params: StrategyParams = {},
 ): StrategySignal {
-  const rsi = rsiScore(closes, params.rsiPeriod ?? 14, params.rsiOversold ?? 30, params.rsiOverbought ?? 70);
-  const macd = macdScore(closes, params.macdFast ?? 12, params.macdSlow ?? 26, params.macdSignal ?? 9);
-  const bollinger = bollingerScore(closes, params.bbPeriod ?? 20, params.bbMultiplier ?? 2);
-  const ema = emaScore(closes, params.emaFast ?? 9, params.emaSlow ?? 21);
-  const indicators = { rsi, macd, bollinger, ema };
+  const base = computeScore(strategy, closes, params);
+  const indicators = base.indicators;
   const volatilityPct = calcVolatilityPct(closes, params.volatilityLookback ?? 20);
   const trendPct = calcTrendPct(closes, params.trendEmaFast ?? 20, params.trendEmaSlow ?? 50);
-
-  if (strategy === 'COMPOSITE') {
-    const composite = compositeStrategy(closes, params);
-    const filtered = applyFilters(composite.action, volatilityPct, trendPct, params);
-    return { action: filtered.action, score: composite.score, volatilityPct, trendPct, filterReason: filtered.reason, indicators };
-  }
-
   const buyThreshold = params.buyThreshold ?? 0.5;
   const sellThreshold = params.sellThreshold ?? -0.5;
-  let score = 0;
-  if (strategy === 'RSI') score = rsi;
-  if (strategy === 'MACD') score = macd;
-  if (strategy === 'BOLLINGER') score = bollinger;
-  if (strategy === 'EMA') score = ema;
 
-  const baseAction = actionFromScore(score, buyThreshold, sellThreshold);
-  const filtered = applyFilters(baseAction, volatilityPct, trendPct, params);
-  return { action: filtered.action, score, volatilityPct, trendPct, filterReason: filtered.reason, indicators };
+  const confirmBars = Math.max(1, Math.min(5, params.confirmBars ?? 1));
+  if (confirmBars <= 1) {
+    const baseAction = actionFromScore(base.score, buyThreshold, sellThreshold);
+    const filtered = applyFilters(baseAction, volatilityPct, trendPct, params);
+    return { action: filtered.action, score: base.score, volatilityPct, trendPct, filterReason: filtered.reason, indicators };
+  }
+
+  const scores: number[] = [];
+  for (let i = confirmBars - 1; i >= 0; i--) {
+    const slice = closes.slice(0, closes.length - i);
+    if (slice.length < 30) continue;
+    scores.push(computeScore(strategy, slice, params).score);
+  }
+  const avgScore = scores.length ? (scores.reduce((s, v) => s + v, 0) / scores.length) : base.score;
+  const buyHits = scores.filter(s => s >= buyThreshold).length;
+  const sellHits = scores.filter(s => s <= sellThreshold).length;
+  const minHits = Math.ceil(confirmBars * 0.6);
+
+  let action: 'BUY' | 'SELL' | 'HOLD' = 'HOLD';
+  if (buyHits >= minHits) action = 'BUY';
+  else if (sellHits >= minHits) action = 'SELL';
+  else action = actionFromScore(avgScore, buyThreshold, sellThreshold);
+
+  const filtered = applyFilters(action, volatilityPct, trendPct, params);
+  return { action: filtered.action, score: avgScore, volatilityPct, trendPct, filterReason: filtered.reason, indicators };
 }
 
 function applyFilters(
@@ -133,4 +141,28 @@ function applyFilters(
   }
 
   return { action };
+}
+
+function computeScore(
+  strategy: StrategyType,
+  closes: number[],
+  params: StrategyParams,
+): { score: number; indicators: StrategySignal['indicators'] } {
+  const rsi = rsiScore(closes, params.rsiPeriod ?? 14, params.rsiOversold ?? 30, params.rsiOverbought ?? 70);
+  const macd = macdScore(closes, params.macdFast ?? 12, params.macdSlow ?? 26, params.macdSignal ?? 9);
+  const bollinger = bollingerScore(closes, params.bbPeriod ?? 20, params.bbMultiplier ?? 2);
+  const ema = emaScore(closes, params.emaFast ?? 9, params.emaSlow ?? 21);
+  const indicators = { rsi, macd, bollinger, ema };
+
+  if (strategy === 'COMPOSITE') {
+    const composite = compositeStrategy(closes, params);
+    return { score: composite.score, indicators };
+  }
+
+  let score = 0;
+  if (strategy === 'RSI') score = rsi;
+  if (strategy === 'MACD') score = macd;
+  if (strategy === 'BOLLINGER') score = bollinger;
+  if (strategy === 'EMA') score = ema;
+  return { score, indicators };
 }
