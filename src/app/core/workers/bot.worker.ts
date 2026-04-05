@@ -29,7 +29,7 @@ self.onmessage = (evt) => {
   }
 };
 
-// ── Binance public data — called directly from browser, not blocked ────────
+// Binance public data - called directly from browser (not blocked)
 const BINANCE_HOSTS = [
   'https://api.binance.com',
   'https://api1.binance.com',
@@ -53,7 +53,7 @@ async function fetchKlines(symbol: string, interval: string, limit = 200): Promi
   throw lastErr ?? new Error('All Binance hosts failed');
 }
 
-// ── Indicator math (mirrors api/_lib/indicators/) ─────────────────────────
+// Indicator math (mirrors api/_lib/indicators/)
 function calcEma(vals: number[], period: number): number[] {
   if (vals.length < period) return [];
   const k = 2 / (period + 1);
@@ -149,7 +149,7 @@ function computeSignal(strategy: string, closes: number[], params: any) {
   return { action, score, indicators };
 }
 
-// ── Main bot cycle ─────────────────────────────────────────────────────────
+// Main bot cycle
 async function runBotCycle(): Promise<void> {
   if (!config) return;
 
@@ -158,7 +158,7 @@ async function runBotCycle(): Promise<void> {
   try {
     self.postMessage({ type: 'CYCLE_START', timestamp: Date.now() });
 
-    // Paper mode: run entirely in browser — no Vercel/server needed
+    // Paper mode: run entirely in browser - no Vercel/server needed
     if (isPaper) {
       const rawKlines = await fetchKlines(config.pair ?? 'BTCUSDT', config.timeframe ?? '1h', 200);
       const closes = rawKlines.map((k: any[]) => parseFloat(k[4]));

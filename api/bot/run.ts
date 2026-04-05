@@ -69,6 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       availableBalance,
       openPositions,
       dailyPnlPct,
+      signal.action,
     );
 
     if (!risk.allowed) {
@@ -82,12 +83,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const stopLossPrice = signal.action === 'BUY'
-      ? currentPrice * (1 - (riskParams.stopLossPct ?? 2) / 100)
-      : currentPrice * (1 + (riskParams.stopLossPct ?? 2) / 100);
-    const takeProfitPrice = signal.action === 'BUY'
-      ? currentPrice * (1 + (riskParams.takeProfitPct ?? 4) / 100)
-      : currentPrice * (1 - (riskParams.takeProfitPct ?? 4) / 100);
+    const stopLossPrice = risk.stopLossPrice ?? currentPrice;
+    const takeProfitPrice = risk.takeProfitPrice ?? currentPrice;
 
     // 5. Execute trade
     let trade: any = null;

@@ -20,6 +20,7 @@ export function checkRisk(
   availableBalance: number,
   openPositions: number,
   dailyPnlPct: number,
+  side: 'BUY' | 'SELL' = 'BUY',
 ): RiskCheck {
   if (dailyPnlPct <= -params.maxDailyLossPct) {
     return { allowed: false, reason: `Daily loss limit reached (${dailyPnlPct.toFixed(2)}%)` };
@@ -35,8 +36,12 @@ export function checkRisk(
 
   const riskAmount = availableBalance * (params.positionSizePct / 100);
   const positionSize = riskAmount / currentPrice;
-  const stopLossPrice = currentPrice * (1 - params.stopLossPct / 100);
-  const takeProfitPrice = currentPrice * (1 + params.takeProfitPct / 100);
+  const stopLossPrice = side === 'BUY'
+    ? currentPrice * (1 - params.stopLossPct / 100)
+    : currentPrice * (1 + params.stopLossPct / 100);
+  const takeProfitPrice = side === 'BUY'
+    ? currentPrice * (1 + params.takeProfitPct / 100)
+    : currentPrice * (1 - params.takeProfitPct / 100);
 
   return {
     allowed: true,
